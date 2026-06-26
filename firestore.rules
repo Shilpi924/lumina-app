@@ -71,6 +71,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /geminiQuotaStatus/{dateKey} {
+      allow read: if isDeveloper();
+      allow write: if false; // Written only by Cloud Functions (admin SDK)
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

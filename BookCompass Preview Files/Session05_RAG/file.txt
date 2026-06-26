@@ -1,1 +1,0 @@
-i am a text file and i am here to check if the file exists or not.

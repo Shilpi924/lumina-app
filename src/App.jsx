@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import {
   createUserWithEmailAndPassword,
@@ -98,7 +99,7 @@ const ANONYMOUS_SCAN_LIMIT = 10;
 const DAILY_USER_SCAN_LIMIT = 30;
 const DEVELOPER_EMAILS = ["shilpispin@gmail.com"];
 const DEFAULT_FOLDERS = ["Want to read", "For kids", "Gift ideas", "Favorites"];
-const NO_PREVIEW_LABEL = "NP";
+const NO_PREVIEW_LABEL = "No preview";
 const HIDDEN_FOLDER_NAMES = new Set(["read aloud", "school"]);
 const NEW_FOLDER_OPTION = "__new_folder__";
 const MAX_LIBRARY_CARDS = 10;
@@ -136,17 +137,22 @@ function normalizeFilters(filters) {
   };
 }
 
-function getUserDisplayName(user) {
+export function getUserDisplayName(user) {
   return sanitizeDisplayName(user?.displayName || user?.email?.split("@")[0]) || "Reader";
+}
+
+export function getFirstName(user) {
+  const name = getUserDisplayName(user);
+  return name.split(' ')[0] || "Reader";
 }
 
 function getTimeGreeting(date = new Date()) {
   const hour = date.getHours();
 
-  if (hour < 12) return "good morning";
-  if (hour < 17) return "good afternoon";
-  if (hour < 22) return "good evening";
-  return "good night";
+  if (hour < 12) return "Good Morning";
+  if (hour < 17) return "Good Afternoon";
+  if (hour < 22) return "Good Evening";
+  return "Good Night";
 }
 
 function isValidEmail(email) {
@@ -475,6 +481,40 @@ const encodeFileToBase64 = (file) =>
     reader.onerror = reject;
   });
 
+const compressImage = (file, maxWidth = 1600, quality = 0.8) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(img.src);
+      let { width, height } = img;
+      if (width > maxWidth || height > maxWidth) {
+        if (width > height) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        } else {
+          width = Math.round((width * maxWidth) / height);
+          height = maxWidth;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) reject(new Error("Canvas to Blob failed"));
+          else resolve(new File([blob], file.name, { type: "image/jpeg", lastModified: Date.now() }));
+        },
+        "image/jpeg",
+        quality
+      );
+    };
+    img.onerror = reject;
+  });
+};
+
 function cleanJsonText(text) {
   const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
   const firstBrace = cleaned.indexOf("{");
@@ -525,8 +565,7 @@ function getVisibleFolders(folders) {
   );
 }
 
-function getFolderDisplayLabel(folderName) {
-  if (normalizeBookText(folderName) === "want to read") return "WR";
+export function getFolderDisplayLabel(folderName) {
   return folderName;
 }
 
@@ -813,6 +852,14 @@ function readStoredJson(key, fallbackValue) {
   }
 }
 
+function writeStoredJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.error(`Could not write ${key} to local storage:`, err);
+  }
+}
+
 function getBookDetailsPayload(book) {
   return {
     title: book.title,
@@ -943,7 +990,7 @@ function getCode128Bars(value) {
   return { bars, width: x };
 }
 
-function getImageDataUrl(file, maxWidth = 700) {
+function getImageDataUrl(file, maxWidth = 400) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -956,7 +1003,7 @@ function getImageDataUrl(file, maxWidth = 700) {
         canvas.height = Math.max(1, Math.round(image.height * scale));
         const context = canvas.getContext("2d");
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.74));
+        resolve(canvas.toDataURL("image/jpeg", 0.60));
       };
       image.onerror = reject;
       image.src = reader.result;
@@ -1174,10 +1221,10 @@ function getBookSearchText(book) {
 function getSearchIntent(searchText) {
   const rawSearch = String(searchText || "").toLowerCase();
   const normalized = normalizeBookText(searchText);
-  const minRatingMatch = normalized.match(
+  const minRatingMatch = rawSearch.match(
     /\b(?:rating|rated|stars?)?\s*(?:above|over|at least|more than|greater than)\s*(\d(?:\.\d)?)\b/
   );
-  const directRatingMatch = normalized.match(
+  const directRatingMatch = rawSearch.match(
     /\b(?:rating|rated|stars?)\s*(\d(?:\.\d)?)\b/
   );
   const gradeMatch = normalized.match(/\bgrade\s*(\d+)\b/);
@@ -1416,24 +1463,33 @@ export {
 };
 /* eslint-enable react-refresh/only-export-components */
 
-export default function App() {
-  useEffect(() => {
-    logEvent(analytics, "app_opened");
-  }, []);
+const GoogleIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "12px" }}>
+    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    <path d="M1 1h22v22H1z" fill="none"/>
+  </svg>
+);
 
+export default function App() {
   const [imagePreview, setImagePreview] = useState(null);
   const [books, setBooks] = useState([]);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(() => normalizeFilters(DEFAULT_FILTERS));
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState("scan");
   const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [authMode, setAuthMode] = useState("signin");
   const [authForm, setAuthForm] = useState({
     name: "",
     email: "",
     password: "",
+    confirmPassword: "",
   });
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -1472,9 +1528,15 @@ export default function App() {
   const [selectedBook, setSelectedBook] = useState(null);
   const [similarBooksView, setSimilarBooksView] = useState(null);
   const [similarBooksCache, setSimilarBooksCache] = useState({});
-  const [scanHistory, setScanHistory] = useState([]);
-  const [folders, setFolders] = useState(DEFAULT_FOLDERS);
-  const [bookFolders, setBookFolders] = useState({});
+  const [scanHistory, setScanHistory] = useState(() => {
+    return readStoredJson("scanHistory", []);
+  });
+  const [folders, setFolders] = useState(() => {
+    return readStoredJson("folders", DEFAULT_FOLDERS);
+  });
+  const [bookFolders, setBookFolders] = useState(() => {
+    return readStoredJson("bookFolders", {});
+  });
   const [activeFolder, setActiveFolder] = useState("All");
   const [folderModal, setFolderModal] = useState({
     isOpen: false,
@@ -1493,16 +1555,31 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState(null);
   const [idleBursts, setIdleBursts] = useState([]);
   const [savedArtActive, setSavedArtActive] = useState(false);
+  const [manualBookModalOpen, setManualBookModalOpen] = useState(false);
+  const [manualBookForm, setManualBookForm] = useState({
+    title: "",
+    author: "",
+    genre: "",
+    readingLevel: "Intermediate",
+    rating: "4.0",
+    summary: "",
+    whyRead: "",
+    shelfLocation: "",
+    shelfPick: "Popular",
+  });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("");
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== "undefined" ? !navigator.onLine : false);
   const recognitionRef = useRef(null);
   const filterSearchRef = useRef(null);
   const libraryCardScanInputRef = useRef(null);
   const [savedFiles, setSavedFiles] = useState(() => {
     return normalizeSavedFiles(readStoredJson("savedPreviewFiles", []));
   });
-  const [libraryCards, setLibraryCards] = useState([]);
+  const [libraryCards, setLibraryCards] = useState(() => {
+    return normalizeLibraryCards(readStoredJson("libraryCards", []));
+  });
   const [libraryCardForm, setLibraryCardForm] = useState({
     name: "",
     cardNumber: "",
@@ -1513,6 +1590,7 @@ export default function App() {
   const [libraryCardLoginPromptOpen, setLibraryCardLoginPromptOpen] =
     useState(false);
   const [scanLimitPromptOpen, setScanLimitPromptOpen] = useState(false);
+  const [cameraIdle, setCameraIdle] = useState(false);
   const [openSections, setOpenSections] = useState(() => ({
     ...SECTION_DEFAULT_OPEN,
     ...readStoredJson("openSections", {}),
@@ -1531,21 +1609,120 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem("readingList", JSON.stringify(readingList));
+    let listener = null;
+    CapacitorApp.addListener("backButton", () => {
+      if (selectedBook) {
+        setSelectedBook(null);
+      } else if (compareOpen) {
+        setCompareOpen(false);
+      } else if (similarBooksView) {
+        setSimilarBooksView(null);
+      } else if (previewModal) {
+        setPreviewModal(null);
+      } else if (folderModal.isOpen) {
+        setFolderModal({ isOpen: false, name: "", book: null });
+      } else if (manualBookModalOpen) {
+        setManualBookModalOpen(false);
+      } else if (scanLimitPromptOpen) {
+        setScanLimitPromptOpen(false);
+      } else if (currentPage !== "scan") {
+        setCurrentPage("scan");
+      } else {
+        CapacitorApp.exitApp();
+      }
+    }).then((l) => {
+      listener = l;
+    });
+
+    return () => {
+      if (listener) listener.remove();
+    };
+  }, [
+    currentPage,
+    selectedBook,
+    compareOpen,
+    similarBooksView,
+    previewModal,
+    folderModal.isOpen,
+    manualBookModalOpen,
+    scanLimitPromptOpen
+  ]);
+  useEffect(() => {
+    logEvent(analytics, "app_opened");
+  }, []);
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOffline(false);
+    }
+    function handleOffline() {
+      setIsOffline(true);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingStep(0);
+      interval = setInterval(() => {
+        setLoadingStep((prev) => Math.min(prev + 1, 3));
+      }, 1800);
+    } else {
+      setLoadingStep(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [loading]);
+
+  useEffect(() => {
+    writeStoredJson("readingList", readingList);
   }, [readingList]);
 
   useEffect(() => {
-    localStorage.setItem("savedPreviewFiles", JSON.stringify(savedFiles));
+    writeStoredJson("savedPreviewFiles", savedFiles);
     savedFileIdsRef.current = new Set(savedFiles.map((file) => file.id));
   }, [savedFiles]);
 
   useEffect(() => {
-    localStorage.setItem("geminiDailyUsage", JSON.stringify(geminiUsage));
+    writeStoredJson("geminiDailyUsage", geminiUsage);
   }, [geminiUsage]);
 
   useEffect(() => {
-    localStorage.setItem("openSections", JSON.stringify(openSections));
+    writeStoredJson("openSections", openSections);
   }, [openSections]);
+
+  // Camera idle pulse — starts 3s after landing on the scan page with nothing loaded
+  useEffect(() => {
+    if (currentPage !== "scan" || books.length > 0 || imagePreview || loading) {
+      setCameraIdle(false);
+      return;
+    }
+    const t = setTimeout(() => setCameraIdle(true), 3000);
+    return () => clearTimeout(t);
+  }, [currentPage, books.length, imagePreview, loading]);
+
+  useEffect(() => {
+    writeStoredJson("scanHistory", scanHistory);
+  }, [scanHistory]);
+
+  useEffect(() => {
+    writeStoredJson("folders", folders);
+  }, [folders]);
+
+  useEffect(() => {
+    writeStoredJson("bookFolders", bookFolders);
+  }, [bookFolders]);
+
+  useEffect(() => {
+    writeStoredJson("libraryCards", libraryCards);
+  }, [libraryCards]);
 
   useEffect(() => {
     if (compare.length === 2 && !compareOpen) {
@@ -1592,25 +1769,39 @@ export default function App() {
 
       if (!firebaseUser) {
         setUser(null);
+        setAuthReady(true);
         return;
       }
       if (firebaseUser.isAnonymous) {
         setUser(firebaseUser);
         userDataLoadedRef.current = true;
+        setAuthReady(true);
         return;
       }
       if (!firebaseUser.emailVerified) {
         await signOut(auth);
         setUser(null);
+        setAuthReady(true);
         setAuthMode("signin");
         setAuthMessage("Please verify your email before logging in.");
         return;
       }
 
-      setUser(firebaseUser);
+      const customPhotoURL = localStorage.getItem("profilePic_" + firebaseUser.uid);
+      setUser({ ...firebaseUser, customPhotoURL });
+      setAuthReady(true);
 
       try {
         const userRef = doc(db, "users", firebaseUser.uid);
+        
+        // Fetch existing customPhotoURL from Firestore
+        const userSnap = await getDoc(userRef);
+        const userData = userSnap.exists() ? userSnap.data() : {};
+        if (userData.customPhotoURL) {
+          localStorage.setItem("profilePic_" + firebaseUser.uid, userData.customPhotoURL);
+          setUser((prev) => ({ ...prev, customPhotoURL: userData.customPhotoURL }));
+        }
+
         await setDoc(
           userRef,
           {
@@ -1670,7 +1861,6 @@ export default function App() {
           setReadingList(mergedReadingList);
           setSavedFiles(mergedSavedFiles);
           setFilters(hasActiveFilters(localFilters) ? localFilters : cloudFilters);
-          setBooks(mergedBooks);
           setScanHistory(mergedScanHistory);
           setFolders(mergedFolders.length ? mergedFolders : DEFAULT_FOLDERS);
           setBookFolders(mergedBookFolders);
@@ -1773,9 +1963,20 @@ export default function App() {
           recentLogins.map((loginEvent) => loginEvent.userId).filter(Boolean)
         ).size;
 
+        const geminiSuccessSnapshot = await getCountFromServer(
+          query(collection(db, "developerApiUsageEvents"), where("provider", "==", "gemini"), where("isSuccess", "==", true))
+        );
+        const claudeSuccessSnapshot = await getCountFromServer(
+          query(collection(db, "developerApiUsageEvents"), where("provider", "==", "claude"), where("isSuccess", "==", true))
+        );
+        const totalCallsSnapshot = await getCountFromServer(collection(db, "developerApiUsageEvents"));
+
         if (cancelled) return;
 
         setDeveloperStats({
+          geminiSuccessCalls: geminiSuccessSnapshot.data().count || 0,
+          claudeSuccessCalls: claudeSuccessSnapshot.data().count || 0,
+          totalApiCalls: totalCallsSnapshot.data().count || 0,
           totalLoginEvents: totalLoginSnapshot.data().count || 0,
           todayLoginEvents: todayLoginSnapshot.data().count || 0,
           recentUniqueUsers,
@@ -2079,6 +2280,10 @@ export default function App() {
       const passwordError = validatePassword(password);
       if (passwordError) {
         setAuthMessage(passwordError);
+        return;
+      }
+      if (password !== authForm.confirmPassword) {
+        setAuthMessage("Passwords do not match.");
         return;
       }
     }
@@ -2462,7 +2667,8 @@ export default function App() {
       if (isGeminiConfigured) {
         try {
           await ensureScanAuth();
-          const base64 = await encodeFileToBase64(file);
+          const compressedFile = await compressImage(file);
+          const base64 = await encodeFileToBase64(compressedFile);
           beginGeminiCall("Library card scan");
           const result = await generateGeminiContent([
             {
@@ -2536,6 +2742,10 @@ Do not include explanations.
 
   async function handleImage(file) {
     if (!file) return;
+    if (isOffline) {
+      setError("You are offline. Scans are temporarily disabled.");
+      return;
+    }
     if (!isGeminiConfigured) {
       setError("Firebase is not configured yet.");
       return;
@@ -2567,7 +2777,8 @@ Do not include explanations.
       }
 
       await ensureScanAuth();
-      const base64 = await encodeFileToBase64(file);
+      const compressedFile = await compressImage(file);
+      const base64 = await encodeFileToBase64(compressedFile);
       recordLocalScanUsage(quotaUser);
       beginGeminiCall("Bookshelf scan");
       geminiCallStarted = true;
@@ -2613,8 +2824,9 @@ Important:
   - 4-6 for grade 4 to grade 6
   - 7+ for grade 7 and above or teen/adult books
 - Include at most 12 books.
-- Do not invent too many books.
-- Only include books you can reasonably detect.
+- Do NOT hallucinate, guess, or invent books.
+- Only list books if you can clearly and confidently read the title or author on the spine or cover.
+- If an object is not clearly a book with readable text, ignore it.
 - For shelfLocation, describe exactly where the book appears in the image:
   row from top to bottom, left/middle/right section, order from left or right,
   whether it is vertical, horizontal, leaning, stacked, partly hidden, or near
@@ -2944,6 +3156,113 @@ Important:
       book: null,
       name: "",
     });
+  }
+
+  function deleteFolder(folderName) {
+    if (window.confirm(`Are you sure you want to delete the folder "${folderName}"? All books in it will be moved back to "Want to read".`)) {
+      setFolders((current) => current.filter((f) => f !== folderName));
+      if (activeFolder === folderName) {
+        setActiveFolder("All");
+      }
+      setBookFolders((current) => {
+        const updated = { ...current };
+        Object.keys(updated).forEach((key) => {
+          if (updated[key] === folderName) {
+            delete updated[key];
+          }
+        });
+        return updated;
+      });
+      setSaveStatus({
+        message: `Folder "${folderName}" was deleted.`,
+        bookKey: "folder",
+        type: "folder",
+      });
+    }
+  }
+
+  function deleteScanHistoryItem(scanId) {
+    if (window.confirm("Are you sure you want to delete this scan history record?")) {
+      setScanHistory((current) => current.filter((scan) => scan.id !== scanId));
+    }
+  }
+
+  function clearAllScanHistory() {
+    if (window.confirm("Are you sure you want to delete all scan history? This action cannot be undone.")) {
+      setScanHistory([]);
+    }
+  }
+
+  function openManualBookModal() {
+    setManualBookForm({
+      title: "",
+      author: "",
+      genre: "",
+      readingLevel: "Intermediate",
+      rating: "4.0",
+      summary: "",
+      whyRead: "",
+      shelfLocation: "",
+      shelfPick: "Popular",
+    });
+    setManualBookModalOpen(true);
+  }
+
+  function closeManualBookModal() {
+    setManualBookModalOpen(false);
+  }
+
+  function handleManualBookChange(fieldName, value) {
+    setManualBookForm((current) => ({
+      ...current,
+      [fieldName]: value,
+    }));
+  }
+
+  function saveManualBook(event) {
+    event.preventDefault();
+    const title = manualBookForm.title.trim();
+    if (!title) {
+      alert("Please enter a book title.");
+      return;
+    }
+
+    const newBook = {
+      title,
+      author: manualBookForm.author.trim() || "Unknown",
+      authorBio: "Manually entered book details.",
+      rating: Number(manualBookForm.rating) || 4.0,
+      ratingSource: "Estimated",
+      summary: manualBookForm.summary.trim() || "Manual summary entry.",
+      genre: manualBookForm.genre.trim() || "Book",
+      readingLevel: manualBookForm.readingLevel || "Intermediate",
+      gradeBand: manualBookForm.readingLevel === "Easy" ? "K-3" : manualBookForm.readingLevel === "Advanced" ? "7+" : "4-6",
+      ageRecommendation: "All ages",
+      whyRead: manualBookForm.whyRead.trim() || "Added manually by you.",
+      shelfPick: manualBookForm.shelfPick || "Popular",
+      shelfLocation: manualBookForm.shelfLocation.trim() || "Manual Entry",
+      scanConfidence: "high confidence",
+      confidenceReason: "Manually entered details.",
+      reviewed: true,
+    };
+
+    setBooks((current) => [newBook, ...current]);
+    
+    setReadingList((currentList) => {
+      const bookKey = getBookKey(newBook);
+      if (currentList.some((b) => getBookKey(b) === bookKey)) {
+        return currentList;
+      }
+      return [{ ...newBook, savedAt: new Date().toISOString() }, ...currentList];
+    });
+
+    setSaveStatus({
+      message: `Manual entry "${newBook.title}" saved.`,
+      bookKey: getSavedFileKey(newBook.title, "favorite"),
+      type: "favorite",
+    });
+
+    closeManualBookModal();
   }
 
   function closeFolderModal() {
@@ -3506,23 +3825,44 @@ Important:
 
   function renderBookCard(book, index, options = {}) {
     const theme = getTheme(book);
-    const previewButton = getPreviewButtonState(book);
     const favoriteSaved = isBookInReadingList(book);
     const compareSelected = compare.some((selectedBook) => getBookKey(selectedBook) === getBookKey(book));
     const confidence = getScanConfidenceDisplayLabel(book);
-    const folderName = bookFolders[getBookKey(book)] || "Want to read";
     const bookKey = getBookKey(book) || `${book.title}-${index}`;
     const shelfLocationOpen = Boolean(openShelfLocations[bookKey]);
 
     return (
       <div
         key={`${book.title}-${options.prefix || "book"}-${index}`}
+        className="book-card"
         style={{
           ...styles.card,
           background: theme.cardBg,
           border: `3px solid ${theme.border}`,
         }}
+        onClick={() => {
+          setSelectedBook(book);
+          setSimilarBooksView(null);
+        }}
       >
+        {!options.compact && (
+          <button
+            type="button"
+            style={{
+              ...styles.favoriteButtonFloating,
+              color: favoriteSaved ? "#ef4444" : "#94a3b8",
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleReadingList(book);
+            }}
+            aria-label={favoriteSaved ? "Remove favorite" : "Add favorite"}
+            title={favoriteSaved ? "Remove favorite" : "Add favorite"}
+          >
+            ♥
+          </button>
+        )}
+
         <div style={styles.bookImage}>
           <span style={styles.cardBookOne} />
           <span style={styles.cardBookTwo} />
@@ -3567,84 +3907,41 @@ Important:
             <p>{book.summary}</p>
 
             <div style={styles.buttonRow}>
-              <button
-                style={styles.smallButton}
-                onClick={() => {
-                  setSelectedBook(book);
-                  setSimilarBooksView(null);
-                }}
-              >
-                🌟 Details
-              </button>
-
-              <button
-                style={{
-                  ...styles.smallButton,
-                  ...(previewButton.saved ? styles.savedButton : {}),
-                  ...(previewButton.disabled ? styles.disabledButton : {}),
-                }}
-                onClick={() => openPreview(book)}
-                disabled={previewButton.disabled}
-                aria-disabled={previewButton.disabled}
-              >
-                {previewButton.label}
-              </button>
+              {options.prefix !== "library" && (
+                <button
+                  type="button"
+                  style={{
+                    ...styles.smallButton,
+                    ...(shelfLocationOpen ? styles.selectedButton : {}),
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenShelfLocations((locations) => ({
+                      ...locations,
+                      [bookKey]: !shelfLocationOpen,
+                    }));
+                  }}
+                >
+                  📍 Locate on Shelf
+                </button>
+              )}
 
               <button
                 type="button"
                 style={{
                   ...styles.smallButton,
-                  ...(shelfLocationOpen ? styles.selectedButton : {}),
-                }}
-                onClick={() =>
-                  setOpenShelfLocations((locations) => ({
-                    ...locations,
-                    [bookKey]: !shelfLocationOpen,
-                  }))
-                }
-              >
-                Shelf location
-              </button>
-
-              <button
-                style={{
-                  ...styles.smallButton,
-                  ...styles.favoriteButton,
-                  ...(favoriteSaved ? styles.favoriteButtonSaved : {}),
-                }}
-                onClick={() => toggleReadingList(book)}
-                aria-label={favoriteSaved ? "Remove favorite" : "Add favorite"}
-                title={favoriteSaved ? "Remove favorite" : "Add favorite"}
-              >
-                ♥
-              </button>
-
-              <select
-                style={styles.inlineSelect}
-                value={folderName}
-                onChange={(event) => handleFolderSelect(book, event.target.value)}
-                aria-label="Book folder"
-              >
-                {getVisibleFolders(folders).map((folder) => (
-                  <option key={folder} value={folder}>
-                    {folder}
-                  </option>
-                ))}
-                <option value={NEW_FOLDER_OPTION}>Add new folder...</option>
-              </select>
-
-              <button
-                style={{
-                  ...styles.smallButton,
                   ...(compareSelected ? styles.selectedButton : {}),
                 }}
-                onClick={() => toggleCompare(book)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCompare(book);
+                }}
               >
                 {compareSelected ? "Comparing" : "⚖️ Compare"}
               </button>
             </div>
 
-            {shelfLocationOpen && (
+            {options.prefix !== "library" && shelfLocationOpen && (
               <p style={styles.shelfLocationNote}>
                 <b>Where it is:</b> {book.shelfLocation}
               </p>
@@ -3875,15 +4172,95 @@ Important:
     const isSignUp = authMode === "signup";
     const accountUser = isSyncUser(user) ? user : null;
 
+    const handleProfilePictureUpload = (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = async () => {
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          const MAX_SIZE = 512;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height = Math.round(height * (MAX_SIZE / width));
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width = Math.round(width * (MAX_SIZE / height));
+              height = MAX_SIZE;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+
+          try {
+            setAuthLoading(true);
+            if (auth.currentUser) {
+              localStorage.setItem("profilePic_" + auth.currentUser.uid, dataUrl);
+              setUser((prev) => ({ ...prev, customPhotoURL: dataUrl }));
+              
+              if (db) {
+                const userRef = doc(db, "users", auth.currentUser.uid);
+                await setDoc(userRef, { customPhotoURL: dataUrl }, { merge: true });
+              }
+
+              setAuthMessage("Profile picture updated!");
+            }
+          } catch (error) {
+            console.error("Error updating profile picture", error);
+            setAuthMessage("Failed to update profile picture: " + error.message);
+          } finally {
+            setAuthLoading(false);
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    };
+
     if (accountUser) {
       return (
         <section style={styles.authPanel}>
           <div style={styles.authHeader}>
-            <h2 style={styles.authTitle}>Account</h2>
-            <p style={styles.authSubtitle}>
-              Signed in as {getUserDisplayName(accountUser)}
-              {accountUser.email ? ` (${accountUser.email})` : ""}.
-            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
+              <label style={{ cursor: "pointer", position: "relative" }}>
+                {accountUser.customPhotoURL || accountUser.photoURL ? (
+                  <img src={accountUser.customPhotoURL || accountUser.photoURL} alt="Profile" style={{ width: "80px", height: "80px", borderRadius: "50%", objectFit: "cover", border: "2px solid #e2e8f0" }} />
+                ) : (
+                  <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="#94a3b8"/>
+                    </svg>
+                  </div>
+                )}
+                <div style={{ position: "absolute", bottom: "-4px", right: "-4px", background: "#ffffff", borderRadius: "50%", padding: "4px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                </div>
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleProfilePictureUpload} disabled={authLoading} />
+              </label>
+              <div>
+                <h2 style={{ ...styles.authTitle, marginBottom: "4px" }}>Account</h2>
+                <p style={{ ...styles.authSubtitle, margin: 0 }}>
+                  Signed in as {getUserDisplayName(accountUser)}
+                  {accountUser.email ? ` (${accountUser.email})` : ""}.
+                </p>
+              </div>
+            </div>
           </div>
 
           {!accountUser.emailVerified && (
@@ -3999,6 +4376,20 @@ Important:
             )}
           </label>
 
+          {isSignUp && (
+            <label style={styles.filterLabel}>
+              <span>Confirm Password</span>
+              <input
+                style={styles.filterControl}
+                value={authForm.confirmPassword}
+                type="password"
+                placeholder="Confirm Password"
+                autoComplete="new-password"
+                onChange={(event) => updateAuthForm("confirmPassword", event.target.value)}
+              />
+            </label>
+          )}
+
           <button
             type="submit"
             style={styles.authPrimaryButton}
@@ -4015,7 +4406,7 @@ Important:
             onClick={handleGoogleLogin}
             disabled={authLoading || !isFirebaseConfigured}
           >
-            <span style={styles.googleSignInIcon} aria-hidden="true">G</span>
+            <GoogleIcon />
             <span>Continue with Google</span>
           </button>
           <button
@@ -4417,11 +4808,7 @@ Important:
                     {savedBook.bookTitle}
                   </button>
                   <p style={styles.savedFileMeta}>
-                    {savedBook.favorite ? "Favorite" : "Saved"}
-                    {savedBook.favorite && savedBook.source !== "favorite"
-                      ? " + Saved"
-                      : ""}{" "}
-                    · {new Date(savedBook.savedAt).toLocaleString()}
+                    {new Date(savedBook.savedAt).toLocaleDateString()}
                   </p>
                 </div>
 
@@ -4529,6 +4916,7 @@ Important:
   }
 
   function resetPage() {
+    setCurrentPage("scan");
     setImagePreview(null);
     setBooks([]);
     setSearch("");
@@ -4547,9 +4935,8 @@ Important:
     setVoiceListening(false);
     recognitionRef.current?.abort();
   }
-
   const syncUser = isSyncUser(user) ? user : null;
-  const signedInName = syncUser ? getUserDisplayName(syncUser) : "";
+  const signedInName = syncUser ? getFirstName(syncUser) : "";
   const canOpenDeveloper = hasDeveloperAccess(syncUser);
   const homeGreeting = syncUser
     ? `Hi ${signedInName}, ${getTimeGreeting()}.`
@@ -4581,19 +4968,45 @@ Important:
             <>
               <div style={styles.folderToolbar}>
                 <div style={styles.folderTabs}>
-                  {folderTabs.map((folder) => (
-                    <button
-                      key={folder}
-                      type="button"
-                      style={{
-                        ...styles.navButton,
-                        ...(activeFolder === folder ? styles.navButtonActive : {}),
-                      }}
-                      onClick={() => setActiveFolder(folder)}
-                    >
-                      {folder}
-                    </button>
-                  ))}
+                  {folderTabs.map((folder) => {
+                    const isDeletable = folder !== "All";
+                    return (
+                      <div
+                        key={folder}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          position: "relative",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          style={{
+                            ...styles.navButton,
+                            ...(activeFolder === folder ? styles.navButtonActive : {}),
+                            paddingRight: isDeletable ? "28px" : "12px",
+                          }}
+                          onClick={() => setActiveFolder(folder)}
+                        >
+                          {folder}
+                        </button>
+                        {isDeletable && (
+                          <button
+                            type="button"
+                            style={styles.deleteFolderBadge}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteFolder(folder);
+                            }}
+                            title={`Delete ${folder} folder`}
+                            aria-label={`Delete ${folder} folder`}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <button
                   type="button"
@@ -4622,6 +5035,53 @@ Important:
         {renderSavedFiles("library")}
       </section>
     );
+  }
+
+  function renderScanHistory() {
+    return renderCollapsibleSection({
+      id: "scanHistory",
+      title: "Scan History",
+      meta: `${scanHistory.length}`,
+      style: styles.pagePanel,
+      children: (
+        <>
+          {scanHistory.length === 0 ? (
+            <p style={styles.countText}>No bookshelf scans recorded yet.</p>
+          ) : (
+            <div style={styles.historyList}>
+              {scanHistory.map((scan) => (
+                <div key={scan.id} style={styles.historyItem}>
+                  <div style={styles.historyMeta}>
+                    <strong style={styles.historyItemTitle}>📷 {scan.imageName}</strong>
+                    <span style={styles.historyDate}>
+                      {new Date(scan.createdAt).toLocaleString()} · {scan.bookCount} books · {scan.model}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    style={styles.historyDeleteButton}
+                    onClick={() => deleteScanHistoryItem(scan.id)}
+                    title="Delete scan history record"
+                    aria-label="Delete scan history record"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+              <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  style={styles.historyClearAllButton}
+                  onClick={clearAllScanHistory}
+                >
+                  Clear all scan history
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      ),
+    });
   }
 
   function renderAccountPage() {
@@ -4749,6 +5209,24 @@ Important:
           </strong>
         </div>
         <div style={styles.developerStatCard}>
+          <span style={styles.developerStatLabel}>Gemini Success</span>
+          <strong style={styles.developerStatValue}>
+            {developerStats.geminiSuccessCalls?.toLocaleString() || "0"}
+          </strong>
+        </div>
+        <div style={styles.developerStatCard}>
+          <span style={styles.developerStatLabel}>Claude Success</span>
+          <strong style={styles.developerStatValue}>
+            {developerStats.claudeSuccessCalls?.toLocaleString() || "0"}
+          </strong>
+        </div>
+        <div style={styles.developerStatCard}>
+          <span style={styles.developerStatLabel}>Total API Calls</span>
+          <strong style={styles.developerStatValue}>
+            {developerStats.totalApiCalls?.toLocaleString() || "0"}
+          </strong>
+        </div>
+        <div style={styles.developerStatCard}>
           <span style={styles.developerStatLabel}>Last login</span>
           <strong style={styles.developerStatValueSmall}>
             {developerStats.lastLoginEmail || "No logins yet"}
@@ -4763,6 +5241,11 @@ Important:
 
   return (
     <div style={styles.page}>
+      {isOffline && (
+        <div style={styles.offlineBanner} role="alert">
+          📡 You are offline. Scans and cloud synchronization are temporarily disabled.
+        </div>
+      )}
       <div className="idle-background" aria-hidden="true">
         <span className="gravity-line gravity-line-one" />
         <span className="gravity-line gravity-line-two" />
@@ -4812,56 +5295,55 @@ Important:
 
       <div style={styles.hero}>
         <div style={styles.heroText}>
-          <button
-            type="button"
-            style={styles.brandButton}
-            onClick={resetPage}
-            aria-label="Reset Lumina"
-          >
-            <div style={styles.brandMark} aria-hidden="true">
-              <span style={styles.logoBook} />
-              <span style={styles.logoSpine} />
-              <span style={styles.logoLens} />
-              <span style={styles.logoBeam} />
-            </div>
-            <h1 style={styles.title}>Lumina</h1>
-          </button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button
+              type="button"
+              style={{ ...styles.brandButton, flex: 1 }}
+              onClick={resetPage}
+              aria-label="Reset Lumina"
+            >
+              <div style={styles.brandMark} aria-hidden="true">
+                <span style={styles.logoBook} />
+                <span style={styles.logoSpine} />
+                <span style={styles.logoLens} />
+                <span style={styles.logoBeam} />
+              </div>
+              <h1 style={styles.title}>Lumina</h1>
+            </button>
+            <button
+              type="button"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "50%",
+                backgroundColor: "rgba(34, 49, 71, 0.05)",
+              }}
+              onClick={() => setCurrentPage("account")}
+              aria-label="Account"
+            >
+              {user?.customPhotoURL || user?.photoURL ? (
+                <img src={user.customPhotoURL || user.photoURL} alt="Profile" style={{ width: "44px", height: "44px", borderRadius: "50%", objectFit: "cover" }} />
+              ) : (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="#1e293b"/>
+                </svg>
+              )}
+            </button>
+          </div>
           {currentPage === "scan" && (
-            <p style={styles.subtitle}>
-              Take a photo of your bookshelf and Lumina will identify the books,
-              organize them, and help you choose what to read next.
-            </p>
+            <div style={{ marginTop: "12px", textAlign: "center" }}>
+              <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 4px 0", color: "#1e293b", textAlign: "center" }}>Take a photo of your bookshelf</h2>
+              <p style={{ ...styles.homeSubtitleBody, textAlign: "center" }}>
+                Lumina will identify the books, organize them, and help you
+                choose what to read next.
+              </p>
+            </div>
           )}
-        </div>
-
-        <div style={styles.heroArt}>
-          <button
-            type="button"
-            style={{ ...styles.heroNavButton, "--nav-accent": "#2563eb" }}
-            onClick={() => setCurrentPage("scan")}
-            aria-label="Go to scan"
-            title="Go to scan"
-          >
-            <span style={{ ...styles.agentDot, background: "#2563eb" }} />
-          </button>
-          <button
-            type="button"
-            style={{ ...styles.heroNavButton, "--nav-accent": "#18794e" }}
-            onClick={() => setCurrentPage("saved")}
-            aria-label="Go to saved books"
-            title="Go to saved books"
-          >
-            <span style={{ ...styles.agentDot, background: "#18794e" }} />
-          </button>
-          <button
-            type="button"
-            style={{ ...styles.heroNavButton, "--nav-accent": "#b45309" }}
-            onClick={() => setCurrentPage("account")}
-            aria-label="Go to account"
-            title="Go to account"
-          >
-            <span style={{ ...styles.agentDot, background: "#b45309" }} />
-          </button>
         </div>
       </div>
 
@@ -4870,18 +5352,22 @@ Important:
 
       {currentPage === "scan" && (
         <>
-      <section style={styles.homeGreetingPanel}>
-        <h2 style={styles.homeGreetingTitle}>{homeGreeting}</h2>
-        <p style={styles.homeGreetingText}>{homeGreetingDetail}</p>
-      </section>
+          <section className="greeting-enter" style={{...styles.homeGreetingPanel, textAlign: "center", border: "none", boxShadow: "none", background: "transparent", padding: "0", margin: "16px 0 0"}}>
+            {authReady && (
+              <h2 style={{...styles.homeGreetingTitle, fontSize: "24px", fontWeight: "700"}}>{homeGreeting}</h2>
+            )}
+          </section>
 
-      <div style={styles.uploadBox}>
+      <div className="scan-buttons-enter" style={{ ...styles.uploadBox, display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
         <label
+          className={`btn-press${cameraIdle && !books.length && !imagePreview && !loading ? " camera-btn-pulse" : ""}`}
           style={{
             ...styles.cameraButton,
             ...(!isFirebaseConfigured ? styles.scanButtonNeedsAuth : {}),
+            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+            margin: 0,
           }}
-          onClick={handleScanPickerClick}
+          onClick={() => { setCameraIdle(false); handleScanPickerClick(); }}
         >
           📷 Take Photo
           <input
@@ -4889,9 +5375,32 @@ Important:
             accept="image/*"
             capture="environment"
             hidden
+            disabled={isOffline}
             onChange={(e) => handleImage(e.target.files[0])}
           />
         </label>
+        <button
+          type="button"
+          style={{
+            ...styles.authSecondaryButton,
+            background: "#ffffff",
+            border: "1px solid rgba(34, 49, 71, 0.12)",
+            borderRadius: "6px",
+            color: "#172033",
+            cursor: "pointer",
+            fontSize: "14px",
+            fontWeight: "600",
+            padding: "12px 20px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            margin: 0,
+            transition: "all 150ms ease",
+          }}
+          onClick={openManualBookModal}
+        >
+          ✍️ Add Book Manually
+        </button>
       </div>
 
       {renderFilterControls()}
@@ -4920,7 +5429,7 @@ Important:
 
       {error && <p style={styles.error}>{error}</p>}
 
-      {books.length === 0 && renderSavedFiles("home")}
+
 
       {books.length > 0 && (
         <>
@@ -4957,7 +5466,7 @@ Important:
                   ),
               })}
 
-              {renderCollapsibleSection({
+              {books.length > 3 && renderCollapsibleSection({
                 id: "detectedBooks",
                 title: "Detected books",
                 meta: `${detectedBooks.length}`,
@@ -4980,8 +5489,6 @@ Important:
               })}
             </>
           )}
-
-          {renderSavedFiles("results")}
         </>
       )}
         </>
@@ -5013,7 +5520,7 @@ Important:
         </section>
       )}
 
-      {currentPage === "scan" && selectedBook &&
+      {selectedBook &&
         (() => {
           const theme = getTheme(selectedBook);
           const detailSaveStatus = getScopedSaveStatus(
@@ -5022,14 +5529,16 @@ Important:
             "details"
           );
           const detailsSaved = hasSavedDetails(selectedBook);
+          const previewButton = getPreviewButtonState(selectedBook);
 
           return (
-            <div style={styles.modal}>
+            <div style={styles.modal} onClick={() => setSelectedBook(null)}>
               <div
                 style={{
                   ...styles.modalContent,
                   border: `4px solid ${theme.border}`,
                 }}
+                onClick={(e) => e.stopPropagation()}
               >
                 <div style={styles.modalHeader}>
                   <div style={{ ...styles.modalIcon, background: theme.imageBg }}>
@@ -5107,11 +5616,27 @@ Important:
 
                   <div style={styles.detailMiniCard}>
                     <b>📁 Folder</b>
-                    <p>
-                      {getFolderDisplayLabel(
-                        bookFolders[getBookKey(selectedBook)] || "Want to read"
-                      )}
-                    </p>
+                    <select
+                      style={{
+                        ...styles.inlineSelect,
+                        width: "100%",
+                        marginTop: "6px",
+                        fontSize: "12px",
+                        border: "1px solid rgba(34, 49, 71, 0.15)",
+                        background: "#fff",
+                        cursor: "pointer",
+                      }}
+                      value={bookFolders[getBookKey(selectedBook)] || "Want to read"}
+                      onChange={(event) => handleFolderSelect(selectedBook, event.target.value)}
+                      aria-label="Book folder"
+                    >
+                      {getVisibleFolders(folders).map((folder) => (
+                        <option key={folder} value={folder}>
+                          {folder}
+                        </option>
+                      ))}
+                      <option value={NEW_FOLDER_OPTION}>Add new folder...</option>
+                    </select>
                   </div>
                 </div>
 
@@ -5212,6 +5737,19 @@ Important:
                   <button
                     style={{
                       ...styles.secondaryButton,
+                      ...(previewButton.saved ? styles.savedButton : {}),
+                      ...(previewButton.disabled ? styles.disabledButton : {}),
+                    }}
+                    onClick={() => openPreview(selectedBook)}
+                    disabled={previewButton.disabled}
+                    aria-disabled={previewButton.disabled}
+                  >
+                    📖 {previewButton.label}
+                  </button>
+
+                  <button
+                    style={{
+                      ...styles.secondaryButton,
                       ...(detailsSaved ? styles.savedButton : {}),
                     }}
                     onClick={() => downloadBookDetails(selectedBook)}
@@ -5219,19 +5757,21 @@ Important:
                     {detailsSaved ? "Saved Details" : "Save Details"}
                   </button>
 
-                  <button
-                    style={{
-                      ...styles.secondaryButton,
-                      ...(similarBooksView === "shelf" ? styles.selectedButton : {}),
-                    }}
-                    onClick={() => {
-                      setSimilarBooksView((currentView) =>
-                        currentView === "shelf" ? null : "shelf"
-                      );
-                    }}
-                  >
-                    Similar on shelf
-                  </button>
+                  {currentPage !== "saved" && (
+                    <button
+                      style={{
+                        ...styles.secondaryButton,
+                        ...(similarBooksView === "shelf" ? styles.selectedButton : {}),
+                      }}
+                      onClick={() => {
+                        setSimilarBooksView((currentView) =>
+                          currentView === "shelf" ? null : "shelf"
+                        );
+                      }}
+                    >
+                      Similar on shelf
+                    </button>
+                  )}
 
                   <button
                     style={{
@@ -5269,27 +5809,74 @@ Important:
       {loading && (
         <div style={styles.processingOverlay}>
           <section
-            style={styles.processingPanel}
+            style={{ ...styles.processingPanel, display: "flex", flexDirection: "column", gap: "20px", width: "min(100%, 450px)" }}
             role="status"
             aria-live="polite"
             aria-label="Processing bookshelf photo"
           >
-            <div className="scan-processing-orbit" aria-hidden="true">
-              <span className="scan-processing-core" />
+            <div style={{ display: "flex", alignItems: "center", gap: "16px", alignSelf: "stretch" }}>
+              <div className="scan-processing-orbit" aria-hidden="true">
+                <span className="scan-processing-core" />
+              </div>
+              <div style={styles.processingCopy}>
+                <h2 style={styles.processingTitle}>Lumina AI is scanning...</h2>
+                <p style={styles.processingText}>Reading shelf layout & book spines</p>
+              </div>
             </div>
-            <div style={styles.processingCopy}>
-              <h2 style={styles.processingTitle}>Building your book list...</h2>
-              <p style={styles.processingText}>
-                Lumina is reading the shelf, matching titles, and preparing recommendations.
-              </p>
+
+            {imagePreview && (
+              <div style={{ position: "relative", width: "100%", borderRadius: "8px", overflow: "hidden", height: "200px" }}>
+                <img src={imagePreview} alt="Scanning..." style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <div className="scan-laser-line"></div>
+              </div>
+            )}
+            
+            <div style={styles.progressStepsList}>
+              {[
+                "Uploading bookshelf image...",
+                "Running AI spine recognition...",
+                "Matching grade bands & reading levels...",
+                "Tailoring recommended shelf picks...",
+              ].map((stepText, index) => {
+                const isDone = loadingStep > index;
+                const isActive = loadingStep === index;
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      ...styles.progressStepRow,
+                      opacity: isDone || isActive ? 1 : 0.45,
+                    }}
+                  >
+                    <div
+                      style={{
+                        ...styles.progressStepDot,
+                        backgroundColor: isDone ? "#18794e" : isActive ? "#2563eb" : "#94a3b8",
+                        boxShadow: isActive ? "0 0 10px rgba(37, 99, 235, 0.6)" : "none",
+                      }}
+                    >
+                      {isDone ? "✓" : isActive ? "●" : ""}
+                    </div>
+                    <span
+                      style={{
+                        ...styles.progressStepText,
+                        color: isDone ? "#18794e" : isActive ? "#172033" : "#718096",
+                        fontWeight: isActive ? "600" : "400",
+                      }}
+                    >
+                      {stepText}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </section>
         </div>
       )}
 
       {currentPage === "scan" && compareOpen && compare.length > 0 && (
-        <div style={styles.modal}>
-          <div style={styles.compareModalContent}>
+        <div style={styles.modal} onClick={() => setCompareOpen(false)}>
+          <div style={styles.compareModalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.previewHeader}>
               <div>
                 <h2 style={styles.modalTitle}>Compare Books</h2>
@@ -5357,8 +5944,8 @@ Important:
       )}
 
       {libraryCardLoginPromptOpen && (
-        <div style={styles.modal}>
-          <div style={styles.promptModalContent}>
+        <div style={styles.modal} onClick={() => setLibraryCardLoginPromptOpen(false)}>
+          <div style={styles.promptModalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.promptIcon} aria-hidden="true">▤</div>
             <h2 style={styles.modalTitle}>Log in to save library cards</h2>
             <p style={styles.previewSubtitle}>
@@ -5375,7 +5962,7 @@ Important:
                 }}
                 disabled={authLoading || !isFirebaseConfigured}
               >
-                <span style={styles.googleSignInIcon} aria-hidden="true">G</span>
+                <GoogleIcon />
                 <span>Continue with Google</span>
               </button>
               <button
@@ -5402,8 +5989,8 @@ Important:
       )}
 
       {scanLimitPromptOpen && (
-        <div style={styles.modal}>
-          <div style={styles.promptModalContent}>
+        <div style={styles.modal} onClick={() => setScanLimitPromptOpen(false)}>
+          <div style={styles.promptModalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.promptIcon} aria-hidden="true">⌕</div>
             <h2 style={styles.modalTitle}>Scan limit reached</h2>
             <p style={styles.previewSubtitle}>
@@ -5419,7 +6006,7 @@ Important:
                 }}
                 disabled={authLoading || !isFirebaseConfigured}
               >
-                <span style={styles.googleSignInIcon} aria-hidden="true">G</span>
+                <GoogleIcon />
                 <span>Continue with Google</span>
               </button>
               <button
@@ -5435,8 +6022,8 @@ Important:
       )}
 
       {folderModal.isOpen && (
-        <div style={styles.modal}>
-          <form style={styles.promptModalContent} onSubmit={saveFolderFromModal}>
+        <div style={styles.modal} onClick={closeFolderModal}>
+          <form style={styles.promptModalContent} onSubmit={saveFolderFromModal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.promptIcon} aria-hidden="true">▤</div>
             <h2 style={styles.modalTitle}>Add folder</h2>
             <p style={styles.previewSubtitle}>
@@ -5479,9 +6066,145 @@ Important:
         </div>
       )}
 
+      {manualBookModalOpen && (
+        <div style={styles.modal} onClick={closeManualBookModal}>
+          <form style={{ ...styles.promptModalContent, maxWidth: "450px" }} onSubmit={saveManualBook} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.promptIcon} aria-hidden="true">📖</div>
+            <h2 style={styles.modalTitle}>Add Book Manually</h2>
+            <p style={styles.previewSubtitle}>Enter the details of the book you want to add.</p>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", margin: "14px 0", textAlign: "left" }}>
+              <label style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600" }}>Title *</span>
+                <input
+                  style={styles.filterControl}
+                  value={manualBookForm.title}
+                  placeholder="The Hobbit"
+                  required
+                  autoFocus
+                  onChange={(e) => handleManualBookChange("title", e.target.value)}
+                />
+              </label>
+
+              <label style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600" }}>Author</span>
+                <input
+                  style={styles.filterControl}
+                  value={manualBookForm.author}
+                  placeholder="J.R.R. Tolkien"
+                  onChange={(e) => handleManualBookChange("author", e.target.value)}
+                />
+              </label>
+
+              <div style={{ display: "flex", gap: "12px" }}>
+                <label style={{ ...styles.filterLabel, flex: 1 }}>
+                  <span style={{ fontSize: "13px", fontWeight: "600" }}>Genre</span>
+                  <input
+                    style={styles.filterControl}
+                    value={manualBookForm.genre}
+                    placeholder="Fantasy"
+                    onChange={(e) => handleManualBookChange("genre", e.target.value)}
+                  />
+                </label>
+
+                <label style={{ ...styles.filterLabel, flex: 1 }}>
+                  <span style={{ fontSize: "13px", fontWeight: "600" }}>Rating (0-5)</span>
+                  <input
+                    style={styles.filterControl}
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="5"
+                    value={manualBookForm.rating}
+                    onChange={(e) => handleManualBookChange("rating", e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: "flex", gap: "12px" }}>
+                <label style={{ ...styles.filterLabel, flex: 1 }}>
+                  <span style={{ fontSize: "13px", fontWeight: "600" }}>Reading Level</span>
+                  <select
+                    style={styles.filterControl}
+                    value={manualBookForm.readingLevel}
+                    onChange={(e) => handleManualBookChange("readingLevel", e.target.value)}
+                  >
+                    <option value="Easy">Easy</option>
+                    <option value="Intermediate">Intermediate</option>
+                    <option value="Advanced">Advanced</option>
+                  </select>
+                </label>
+
+                <label style={{ ...styles.filterLabel, flex: 1 }}>
+                  <span style={{ fontSize: "13px", fontWeight: "600" }}>Shelf Pick</span>
+                  <select
+                    style={styles.filterControl}
+                    value={manualBookForm.shelfPick}
+                    onChange={(e) => handleManualBookChange("shelfPick", e.target.value)}
+                  >
+                    <option value="Popular">Popular</option>
+                    <option value="Top Rated">Top Rated</option>
+                    <option value="Hidden Gem">Hidden Gem</option>
+                    <option value="Beginner Friendly">Beginner Friendly</option>
+                    <option value="Educational">Educational</option>
+                  </select>
+                </label>
+              </div>
+
+              <label style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600" }}>Shelf Location</span>
+                <input
+                  style={styles.filterControl}
+                  value={manualBookForm.shelfLocation}
+                  placeholder="Middle row center"
+                  onChange={(e) => handleManualBookChange("shelfLocation", e.target.value)}
+                />
+              </label>
+
+              <label style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600" }}>Summary</span>
+                <textarea
+                  style={{ ...styles.filterControl, height: "60px", resize: "none", fontFamily: "inherit" }}
+                  value={manualBookForm.summary}
+                  placeholder="Enter book summary..."
+                  onChange={(e) => handleManualBookChange("summary", e.target.value)}
+                />
+              </label>
+
+              <label style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600" }}>Why Read</span>
+                <input
+                  style={styles.filterControl}
+                  value={manualBookForm.whyRead}
+                  placeholder="Why someone would like this book..."
+                  onChange={(e) => handleManualBookChange("whyRead", e.target.value)}
+                />
+              </label>
+            </div>
+
+            <div style={styles.previewActionRow}>
+              <button
+                type="submit"
+                style={styles.authPrimaryButton}
+                disabled={!manualBookForm.title.trim()}
+              >
+                Save Book
+              </button>
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={closeManualBookModal}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {selectedLibraryCard && (
-        <div style={styles.modal}>
-          <div style={styles.libraryCardModalContent}>
+        <div style={styles.modal} onClick={() => setSelectedLibraryCard(null)}>
+          <div style={styles.libraryCardModalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.previewHeader}>
               <div>
                 <h2 style={styles.modalTitle}>{selectedLibraryCard.name}</h2>
@@ -5522,8 +6245,8 @@ Important:
       )}
 
       {currentPage === "scan" && previewModal && (
-        <div style={styles.modal}>
-          <div style={styles.previewModalContent}>
+        <div style={styles.modal} onClick={closePreview}>
+          <div style={styles.previewModalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.previewHeader}>
               <div>
                 <h2 style={styles.modalTitle}>
@@ -5616,7 +6339,6 @@ Important:
         {[
           ["scan", "⌕", "Scan", "#2563eb", "rgba(37, 99, 235, 0.13)"],
           ["saved", "▤", "Saved", "#18794e", "rgba(24, 121, 78, 0.13)"],
-          ["account", "◉", "Account", "#b45309", "rgba(245, 158, 11, 0.15)"],
         ].map(([pageId, icon, label, accent, accentBg]) => {
           const isActive = currentPage === pageId;
 
@@ -5665,6 +6387,139 @@ const styles = {
     color: "#4f5f73",
     backdropFilter: "blur(12px)",
     paddingBottom: "calc(140px + env(safe-area-inset-bottom))",
+  },
+  offlineBanner: {
+    position: "sticky",
+    top: "10px",
+    zIndex: 9999,
+    width: "100%",
+    padding: "12px 16px",
+    borderRadius: "8px",
+    background: "rgba(220, 38, 38, 0.95)",
+    color: "#ffffff",
+    fontWeight: "600",
+    fontSize: "14px",
+    textAlign: "center",
+    boxShadow: "0 8px 30px rgba(220, 38, 38, 0.35)",
+    backdropFilter: "blur(8px)",
+    border: "1px solid rgba(255, 255, 255, 0.2)",
+    marginBottom: "16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+  },
+  deleteFolderBadge: {
+    position: "absolute",
+    right: "6px",
+    top: "50%",
+    transform: "translateY(-50%)",
+    background: "rgba(220, 38, 38, 0.12)",
+    color: "#dc2626",
+    border: "none",
+    width: "18px",
+    height: "18px",
+    borderRadius: "999px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "bold",
+    lineHeight: 1,
+    padding: 0,
+  },
+  historyList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    width: "100%",
+    boxSizing: "border-box",
+  },
+  historyItem: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "12px 16px",
+    background: "#ffffff",
+    border: "1px solid rgba(34, 49, 71, 0.08)",
+    borderRadius: "8px",
+    gap: "16px",
+    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.02)",
+    textAlign: "left",
+  },
+  historyMeta: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    minWidth: 0,
+  },
+  historyItemTitle: {
+    color: "#172033",
+    fontSize: "15px",
+    fontWeight: "600",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  historyDate: {
+    color: "#718096",
+    fontSize: "12px",
+  },
+  historyDeleteButton: {
+    flex: "0 0 auto",
+    padding: "6px 12px",
+    background: "rgba(220, 38, 38, 0.08)",
+    color: "#dc2626",
+    border: "1px solid rgba(220, 38, 38, 0.18)",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "500",
+  },
+  historyClearAllButton: {
+    padding: "8px 16px",
+    background: "none",
+    color: "#dc2626",
+    border: "1px solid rgba(220, 38, 38, 0.24)",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: "500",
+  },
+  progressStepsList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+    width: "100%",
+    borderTop: "1px solid rgba(34, 49, 71, 0.08)",
+    paddingTop: "16px",
+    boxSizing: "border-box",
+  },
+  progressStepRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    transition: "opacity 300ms ease",
+    textAlign: "left",
+  },
+  progressStepDot: {
+    width: "18px",
+    height: "18px",
+    borderRadius: "999px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "11px",
+    color: "#ffffff",
+    fontWeight: "bold",
+    lineHeight: 1,
+    flex: "0 0 auto",
+    transition: "all 300ms ease",
+  },
+  progressStepText: {
+    fontSize: "13px",
+    transition: "all 300ms ease",
   },
   hero: {
     background:
@@ -5770,6 +6625,18 @@ const styles = {
     marginTop: "12px",
     marginBottom: 0,
   },
+  homeSubtitleCollapse: {
+    margin: "12px 0 0",
+    background: "rgba(255, 255, 255, 0.86)",
+    border: "1px solid rgba(37, 99, 235, 0.16)",
+  },
+  homeSubtitleBody: {
+    margin: 0,
+    color: "#4f5f73",
+    fontSize: "14px",
+    lineHeight: 1.45,
+    textAlign: "left",
+  },
   heroArt: {
     display: "inline-flex",
     alignItems: "center",
@@ -5851,20 +6718,18 @@ const styles = {
   },
   bottomTabs: {
     position: "fixed",
-    left: "50%",
-    bottom: "max(12px, env(safe-area-inset-bottom))",
-    transform: "translateX(-50%)",
-    width: "min(94vw, 560px)",
+    left: 0,
+    bottom: 0,
+    width: "100%",
     minHeight: "78px",
     display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: "10px",
-    padding: "9px",
-    borderRadius: "8px",
-    border: "1px solid rgba(34, 49, 71, 0.12)",
-    background: "rgba(255, 255, 255, 0.94)",
-    boxShadow: "0 18px 48px rgba(31, 45, 61, 0.18)",
+    padding: "10px 16px max(12px, env(safe-area-inset-bottom))",
+    background: "rgba(255, 255, 255, 0.98)",
+    boxShadow: "0 -4px 24px rgba(31, 45, 61, 0.08)",
     backdropFilter: "blur(18px)",
+    borderTop: "1px solid rgba(34, 49, 71, 0.08)",
     zIndex: 1200,
   },
   bottomTabButton: {
@@ -5940,8 +6805,6 @@ const styles = {
     border: "1px solid #2563eb",
     cursor: "pointer",
     fontWeight: "650",
-    transition: "background 0.2s",
-    boxShadow: "0 12px 30px rgba(37, 99, 235, 0.28)",
   },
   scanButtonNeedsAuth: {
     opacity: 0.78,
@@ -6036,6 +6899,7 @@ const styles = {
     color: "#4f5f73",
     fontSize: "12px",
     fontWeight: "750",
+    textAlign: "center",
   },
   passwordHint: {
     color: "#718096",
@@ -6846,6 +7710,8 @@ const styles = {
     color: "#5f6f86",
     minHeight: "100%",
     textAlign: "left",
+    position: "relative",
+    cursor: "pointer",
   },
   cardTitle: {
     fontSize: "22px",
@@ -6939,6 +7805,7 @@ const styles = {
     fontWeight: "750",
   },
   inlineSelect: {
+    width: "140px",
     minHeight: "36px",
     padding: "7px 8px",
     borderRadius: "8px",
@@ -6946,6 +7813,8 @@ const styles = {
     background: "#f6f8fb",
     color: "#243044",
     fontWeight: "700",
+    textAlign: "center",
+    textAlignLast: "center",
   },
   buttonRow: {
     display: "grid",
@@ -6974,6 +7843,27 @@ const styles = {
   iconButton: {
     fontSize: "18px",
     lineHeight: 1,
+  },
+  favoriteButtonFloating: {
+    position: "absolute",
+    top: "12px",
+    right: "12px",
+    width: "36px",
+    height: "36px",
+    borderRadius: "50%",
+    background: "rgba(255, 255, 255, 0.9)",
+    backdropFilter: "blur(4px)",
+    border: "1px solid rgba(0, 0, 0, 0.08)",
+    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    fontSize: "18px",
+    zIndex: 5,
+    padding: 0,
+    lineHeight: 1,
+    transition: "transform 0.2s ease, background-color 0.2s ease",
   },
   favoriteButton: {
     border: "1px solid rgba(220, 38, 38, 0.26)",
@@ -7038,12 +7928,15 @@ const styles = {
   compareTable: {
     display: "grid",
     gap: "8px",
-    minWidth: 0,
+    width: "100%",
+    minWidth: "560px",
   },
   compareTableScroll: {
-    maxHeight: "min(54vh, 520px)",
+    flex: "1 1 auto",
     overflow: "auto",
-    paddingRight: "2px",
+    overflowX: "auto",
+    maxHeight: "60vh",
+    paddingBottom: "4px",
   },
   compareRow: {
     display: "grid",

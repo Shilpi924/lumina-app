@@ -152,12 +152,40 @@ html {
   opacity: 0.88;
 }
 
+@keyframes scan-processing-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes scan-processing-line {
+  0%, 100% { transform: translateY(-50%) scaleX(0.2); opacity: 0.3; }
+  50% { transform: translateY(-50%) scaleX(1); opacity: 1; }
+}
+
+.scan-laser-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: #2563eb;
+  box-shadow: 0 0 15px 4px rgba(37, 99, 235, 0.5);
+  animation: scan-laser-move 2s ease-in-out infinite alternate;
+}
+
+@keyframes scan-laser-move {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(198px); }
+}
+
+
 .idle-background::before {
   content: "";
   position: absolute;
   inset: -20%;
   background:
     conic-gradient(from 120deg at 50% 50%, transparent 0 24%, rgba(37, 99, 235, 0.13), transparent 42% 100%),
+
     radial-gradient(circle at 28% 74%, rgba(24, 121, 78, 0.06), transparent 18rem),
     radial-gradient(circle at 82% 66%, rgba(245, 158, 11, 0.055), transparent 16rem);
   filter: blur(4px);
@@ -603,6 +631,23 @@ html {
   }
 }
 
+.scan-laser-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: #2563eb;
+  box-shadow: 0 0 15px 2px rgba(37, 99, 235, 0.8), 0 0 30px 4px rgba(37, 99, 235, 0.4);
+  animation: scan-laser 2s ease-in-out infinite alternate;
+  z-index: 10;
+}
+
+@keyframes scan-laser {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(200px); /* Adjust based on container maxHeight */ }
+}
+
 @media (max-width: 640px) {
   .saved-file-item {
     grid-template-columns: 1fr !important;
@@ -617,9 +662,7 @@ html {
     width: 100%;
   }
 
-  .compare-row {
-    grid-template-columns: 1fr !important;
-  }
+
 
   .idle-book {
     width: 24px;
@@ -698,4 +741,151 @@ code {
   line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
+}
+
+/* ── Premium Card hover & staggered reveal ── */
+.book-card {
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.22s ease,
+    opacity 0.36s ease,
+    translate 0.36s cubic-bezier(0.22, 1, 0.36, 1) !important;
+  animation: card-reveal 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.book-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 24px 50px rgba(31, 45, 61, 0.16) !important;
+}
+
+.book-card:active {
+  transform: scale(0.97) translateY(-1px) !important;
+  transition-duration: 80ms !important;
+}
+
+@keyframes card-reveal {
+  from {
+    opacity: 0;
+    translate: 0 28px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes fade-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Greeting entrance */
+.greeting-enter {
+  animation: fade-slide-down 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Scan buttons entrance */
+.scan-buttons-enter {
+  animation: fade-slide-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+}
+
+/* Stagger delay per card index (up to 12 cards) */
+.book-card:nth-child(1)  { animation-delay: 0.00s; }
+.book-card:nth-child(2)  { animation-delay: 0.06s; }
+.book-card:nth-child(3)  { animation-delay: 0.12s; }
+.book-card:nth-child(4)  { animation-delay: 0.18s; }
+.book-card:nth-child(5)  { animation-delay: 0.24s; }
+.book-card:nth-child(6)  { animation-delay: 0.30s; }
+.book-card:nth-child(7)  { animation-delay: 0.36s; }
+.book-card:nth-child(8)  { animation-delay: 0.40s; }
+.book-card:nth-child(9)  { animation-delay: 0.44s; }
+.book-card:nth-child(10) { animation-delay: 0.48s; }
+.book-card:nth-child(11) { animation-delay: 0.52s; }
+.book-card:nth-child(12) { animation-delay: 0.56s; }
+
+/* ── Tactile press effect on primary/action buttons ── */
+.btn-press {
+  transition: transform 0.1s ease, box-shadow 0.1s ease !important;
+}
+.btn-press:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.28) !important;
+}
+.btn-press:active {
+  transform: scale(0.96) !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18) !important;
+  transition-duration: 60ms !important;
+}
+
+/* ── Idle pulse on Take Photo button ── */
+.camera-btn-pulse {
+  animation: camera-idle-pulse 2s ease-in-out infinite;
+}
+
+@keyframes camera-idle-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 18px rgba(37, 99, 235, 0.35);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 4px 48px rgba(37, 99, 235, 0.85), 0 0 0 10px rgba(37, 99, 235, 0.12);
+    transform: scale(1.04);
+  }
+}
+
+/* ── Skeleton shimmer loader ── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(226, 232, 240, 0.8) 25%,
+    rgba(248, 250, 252, 0.9) 50%,
+    rgba(226, 232, 240, 0.8) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: 8px;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-card {
+  border-radius: 12px;
+  padding: 16px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1.5px solid rgba(34, 49, 71, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: card-reveal 0.4s ease both;
+}
+
+/* ── Reduced motion: disable all custom animations ── */
+@media (prefers-reduced-motion: reduce) {
+  .book-card,
+  .btn-press,
+  .camera-btn-pulse,
+  .skeleton,
+  .skeleton-card {
+    animation: none !important;
+    transition: none !important;
+  }
 }

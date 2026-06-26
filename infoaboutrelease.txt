@@ -1,6 +1,0 @@
-bookcompass-release-key.jks
-
-alias upload
-keystor password - bookCompass@1310
-key passward - bookCompass@1310
-

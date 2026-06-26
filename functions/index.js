@@ -12,6 +12,7 @@ const claudeModel = defineString('CLAUDE_MODEL', {
 const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 const API_USAGE_COLLECTION = 'developerApiUsage';
 const API_USAGE_EVENTS_COLLECTION = 'developerApiUsageEvents';
+const GEMINI_QUOTA_COLLECTION = 'geminiQuotaStatus';
 
 function getTodayKey() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -72,10 +73,48 @@ function getRequestIp(request) {
   );
 }
 
-function shouldUseClaudeFallback(status, result) {
+// ─── Smart quota routing helpers ────────────────────────────────────────────
+
+/**
+ * Returns true if Gemini has already hit a quota/rate-limit error today.
+ * Subsequent calls in the same calendar day will skip Gemini entirely.
+ */
+async function isGeminiQuotaExhaustedToday() {
+  try {
+    const db = admin.firestore();
+    const dateKey = getTodayKey();
+    const doc = await db.collection(GEMINI_QUOTA_COLLECTION).doc(dateKey).get();
+    return doc.exists && doc.data()?.exhausted === true;
+  } catch (err) {
+    console.warn('Could not read Gemini quota status:', err?.message);
+    return false; // safe default: still try Gemini
+  }
+}
+
+/**
+ * Marks Gemini as quota-exhausted for the current calendar day.
+ * All subsequent calls today will skip directly to Claude.
+ */
+async function recordGeminiQuotaHit(reason) {
+  try {
+    const db = admin.firestore();
+    const dateKey = getTodayKey();
+    await db.collection(GEMINI_QUOTA_COLLECTION).doc(dateKey).set({
+      exhausted: true,
+      reason: reason || 'quota',
+      firstHitAt: admin.firestore.FieldValue.serverTimestamp(),
+      date: dateKey,
+    }, { merge: true });
+    console.info(`Gemini marked quota-exhausted for ${dateKey}. Claude will be used directly for the rest of the day.`);
+  } catch (err) {
+    console.warn('Could not record Gemini quota hit:', err?.message);
+  }
+}
+
+/** True if the Gemini error looks like a quota / rate-limit problem. */
+function isQuotaError(status, result) {
   const code = String(result?.error?.status || result?.error?.code || '').toLowerCase();
   const message = String(result?.error?.message || '').toLowerCase();
-
   return (
     status === 429 ||
     status === 503 ||
@@ -88,6 +127,11 @@ function shouldUseClaudeFallback(status, result) {
     message.includes('temporarily unavailable') ||
     message.includes('resource exhausted')
   );
+}
+
+// Keep for backwards compatibility
+function shouldUseClaudeFallback(status, result) {
+  return isQuotaError(status, result);
 }
 
 
@@ -295,22 +339,28 @@ export const generateGeminiContent = onCall(
       throw new HttpsError('invalid-argument', 'AI contents are required.');
     }
 
-    const gemini = await callGemini({ contents, generationConfig });
+    // ── Step 1: Check if Gemini quota was already hit today ──────────────────
+    const quotaAlreadyExhausted = await isGeminiQuotaExhaustedToday();
 
-    if (gemini.ok) {
-      await recordUsageSafely({
-        auth: request.auth,
-        callType,
-        status: 'Success',
-        result: gemini.result,
-        provider: 'gemini',
-        model: GEMINI_MODEL,
-        ipAddress,
-      });
-      return { ...gemini.result, provider: 'gemini', model: GEMINI_MODEL };
-    }
+    if (!quotaAlreadyExhausted) {
+      // ── Step 2: Try Gemini first ─────────────────────────────────────────
+      const gemini = await callGemini({ contents, generationConfig });
 
-    if (!shouldUseClaudeFallback(gemini.status, gemini.result)) {
+      if (gemini.ok) {
+        await recordUsageSafely({
+          auth: request.auth,
+          callType,
+          status: 'Success',
+          result: gemini.result,
+          provider: 'gemini',
+          model: GEMINI_MODEL,
+          ipAddress,
+        });
+        return { ...gemini.result, provider: 'gemini', model: GEMINI_MODEL };
+      }
+
+      // ── Step 3: Gemini failed — record it, fall through to Claude ────────
+      const failReason = isQuotaError(gemini.status, gemini.result) ? 'quota' : 'error';
       await recordUsageSafely({
         auth: request.auth,
         callType,
@@ -320,12 +370,19 @@ export const generateGeminiContent = onCall(
         model: GEMINI_MODEL,
         ipAddress,
       });
-      throw new HttpsError(
-        getProviderErrorCode(gemini.status),
-        getProviderErrorMessage('Gemini', gemini)
-      );
+
+      // If this was a quota error, flag it so all subsequent calls today skip Gemini
+      if (failReason === 'quota') {
+        await recordGeminiQuotaHit(getProviderErrorMessage('Gemini', gemini));
+      }
+
+      console.warn(`Gemini failed (${failReason}), falling back to Claude.`);
+    } else {
+      // ── Quota already hit today: skip Gemini, go straight to Claude ──────
+      console.info('Gemini quota exhausted for today — routing directly to Claude.');
     }
 
+    // ── Step 4: Call Claude (fallback or direct) ─────────────────────────────
     const claude = await callClaude({ contents, generationConfig });
 
     if (!claude.ok) {
@@ -354,6 +411,7 @@ export const generateGeminiContent = onCall(
       ipAddress,
     });
 
-    return { ...claude.result, fallbackFrom: 'gemini-quota' };
+    const routeReason = quotaAlreadyExhausted ? 'gemini-quota-daily-skip' : 'gemini-failed-fallback';
+    return { ...claude.result, fallbackFrom: routeReason };
   }
 );
