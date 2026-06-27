@@ -1473,7 +1473,36 @@ const GoogleIcon = () => (
   </svg>
 );
 
+const CARTOONS = [
+  {
+    name: "Cat",
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="#fbcfe8"/><polygon points="25,40 15,10 40,25" fill="#ec4899"/><polygon points="75,40 85,10 60,25" fill="#ec4899"/><circle cx="50" cy="55" r="30" fill="#f472b6"/><circle cx="40" cy="50" r="4" fill="#000"/><circle cx="60" cy="50" r="4" fill="#000"/><ellipse cx="50" cy="58" rx="4" ry="2" fill="#db2777"/></svg>`
+  },
+  {
+    name: "Bear",
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="#fed7aa"/><circle cx="25" cy="25" r="12" fill="#ea580c"/><circle cx="75" cy="25" r="12" fill="#ea580c"/><circle cx="50" cy="55" r="32" fill="#f97316"/><circle cx="40" cy="48" r="4" fill="#000"/><circle cx="60" cy="48" r="4" fill="#000"/><ellipse cx="50" cy="56" rx="8" ry="6" fill="#ffedd5"/><polygon points="47,54 53,54 50,57" fill="#000"/></svg>`
+  },
+  {
+    name: "Frog",
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="#bbf7d0"/><circle cx="35" cy="28" r="10" fill="#22c55e"/><circle cx="65" cy="28" r="10" fill="#22c55e"/><circle cx="35" cy="28" r="4" fill="#000"/><circle cx="65" cy="28" r="4" fill="#000"/><path d="M 30 55 Q 50 70 70 55" stroke="#15803d" stroke-width="4" fill="none" stroke-linecap="round"/></svg>`
+  },
+  {
+    name: "Bird",
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="#fef08a"/><circle cx="40" cy="46" r="4" fill="#000"/><circle cx="60" cy="46" r="4" fill="#000"/><polygon points="46,52 54,52 50,60" fill="#f97316"/><ellipse cx="32" cy="52" rx="6" ry="4" fill="#f87171" opacity="0.5"/><ellipse cx="68" cy="52" rx="6" ry="4" fill="#f87171" opacity="0.5"/></svg>`
+  },
+  {
+    name: "Dog",
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="#e2e8f0"/><ellipse cx="22" cy="40" rx="10" ry="18" fill="#475569"/><ellipse cx="78" cy="40" rx="10" ry="18" fill="#475569"/><circle cx="40" cy="48" r="4" fill="#000"/><circle cx="60" cy="48" r="4" fill="#000"/><ellipse cx="50" cy="58" rx="7" ry="5" fill="#94a3b8"/><polygon points="48,56 52,56 50,59" fill="#000"/></svg>`
+  }
+];
+
 export default function App() {
+  const [disableEmojis, setDisableEmojis] = useState(() => readStoredJson("disableEmojis", false));
+  const e = (emoji, text = "") => {
+    if (disableEmojis) return text;
+    return text ? `${emoji} ${text}` : emoji;
+  };
+
   const [imagePreview, setImagePreview] = useState(null);
   const [books, setBooks] = useState([]);
   const [search, setSearch] = useState("");
@@ -1713,6 +1742,10 @@ export default function App() {
   }, [scanHistory]);
 
   useEffect(() => {
+    writeStoredJson("disableEmojis", disableEmojis);
+  }, [disableEmojis]);
+
+  useEffect(() => {
     writeStoredJson("folders", folders);
   }, [folders]);
 
@@ -1794,12 +1827,18 @@ export default function App() {
       try {
         const userRef = doc(db, "users", firebaseUser.uid);
         
-        // Fetch existing customPhotoURL from Firestore
+        // Fetch existing customPhotoURL and disableEmojis from Firestore
         const userSnap = await getDoc(userRef);
         const userData = userSnap.exists() ? userSnap.data() : {};
         if (userData.customPhotoURL) {
           localStorage.setItem("profilePic_" + firebaseUser.uid, userData.customPhotoURL);
           setUser((prev) => ({ ...prev, customPhotoURL: userData.customPhotoURL }));
+        }
+
+        let mergedDisableEmojis = disableEmojis;
+        if (userData.disableEmojis !== undefined) {
+          mergedDisableEmojis = userData.disableEmojis;
+          setDisableEmojis(mergedDisableEmojis);
         }
 
         await setDoc(
@@ -1810,6 +1849,7 @@ export default function App() {
             displayName: sanitizeDisplayName(getUserDisplayName(firebaseUser)),
             emailVerified: Boolean(firebaseUser.emailVerified),
             updatedAt: serverTimestamp(),
+            disableEmojis: mergedDisableEmojis,
           },
           { merge: true }
         );
@@ -3922,7 +3962,7 @@ Important:
                     }));
                   }}
                 >
-                  📍 Locate on Shelf
+                  {e("📍", "Locate on Shelf")}
                 </button>
               )}
 
@@ -3937,7 +3977,7 @@ Important:
                   toggleCompare(book);
                 }}
               >
-                {compareSelected ? "Comparing" : "⚖️ Compare"}
+                {compareSelected ? "Comparing" : e("⚖️", "Compare")}
               </button>
             </div>
 
@@ -4233,32 +4273,87 @@ Important:
       return (
         <section style={styles.authPanel}>
           <div style={styles.authHeader}>
-            <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
-              <label style={{ cursor: "pointer", position: "relative" }}>
-                {accountUser.customPhotoURL || accountUser.photoURL ? (
-                  <img src={accountUser.customPhotoURL || accountUser.photoURL} alt="Profile" style={{ width: "80px", height: "80px", borderRadius: "50%", objectFit: "cover", border: "2px solid #e2e8f0" }} />
-                ) : (
-                  <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="#94a3b8"/>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <label style={{ cursor: "pointer", position: "relative", flexShrink: 0 }}>
+                  {accountUser.customPhotoURL || accountUser.photoURL ? (
+                    <img src={accountUser.customPhotoURL || accountUser.photoURL} alt="Profile" style={{ width: "80px", height: "80px", borderRadius: "50%", objectFit: "cover", border: "2px solid #e2e8f0" }} />
+                  ) : (
+                    <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="#94a3b8"/>
+                      </svg>
+                    </div>
+                  )}
+                  <div style={{ position: "absolute", bottom: "-4px", right: "-4px", background: "#ffffff", borderRadius: "50%", padding: "4px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="17 8 12 3 7 8"></polyline>
+                      <line x1="12" y1="3" x2="12" y2="15"></line>
                     </svg>
                   </div>
-                )}
-                <div style={{ position: "absolute", bottom: "-4px", right: "-4px", background: "#ffffff", borderRadius: "50%", padding: "4px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="17 8 12 3 7 8"></polyline>
-                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                  </svg>
+                  <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleProfilePictureUpload} disabled={authLoading} />
+                </label>
+                <div>
+                  <h2 style={{ ...styles.authTitle, marginBottom: "4px" }}>Account</h2>
+                  <p style={{ ...styles.authSubtitle, margin: 0 }}>
+                    Signed in as {getUserDisplayName(accountUser)}
+                    {accountUser.email ? ` (${accountUser.email})` : ""}.
+                  </p>
                 </div>
-                <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleProfilePictureUpload} disabled={authLoading} />
-              </label>
-              <div>
-                <h2 style={{ ...styles.authTitle, marginBottom: "4px" }}>Account</h2>
-                <p style={{ ...styles.authSubtitle, margin: 0 }}>
-                  Signed in as {getUserDisplayName(accountUser)}
-                  {accountUser.email ? ` (${accountUser.email})` : ""}.
-                </p>
+              </div>
+
+              {/* Cartoon Selection */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid #f1f5f9", paddingTop: "12px" }}>
+                <span style={{ fontSize: "12px", fontWeight: "600", color: "#64748b" }}>Choose a cartoon character:</span>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  {CARTOONS.map((cartoon) => {
+                    const cartoonUrl = "data:image/svg+xml;utf8," + encodeURIComponent(cartoon.svg);
+                    const isSelected = accountUser.customPhotoURL === cartoonUrl;
+                    return (
+                      <button
+                        key={cartoon.name}
+                        type="button"
+                        style={{
+                          padding: 0,
+                          border: isSelected ? "3px solid #2563eb" : "1.5px solid #cbd5e1",
+                          background: "none",
+                          borderRadius: "50%",
+                          cursor: "pointer",
+                          width: "40px",
+                          height: "40px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          overflow: "hidden",
+                          transition: "all 150ms",
+                          transform: isSelected ? "scale(1.1)" : "none",
+                          backgroundColor: "#f8fafc"
+                        }}
+                        onClick={async () => {
+                          try {
+                            setAuthLoading(true);
+                            localStorage.setItem("profilePic_" + auth.currentUser.uid, cartoonUrl);
+                            setUser((prev) => ({ ...prev, customPhotoURL: cartoonUrl }));
+                            
+                            if (db) {
+                              const userRef = doc(db, "users", auth.currentUser.uid);
+                              await setDoc(userRef, { customPhotoURL: cartoonUrl }, { merge: true });
+                            }
+                            setAuthMessage("Profile picture updated with cartoon!");
+                          } catch (err) {
+                            console.error("Error setting cartoon profile", err);
+                          } finally {
+                            setAuthLoading(false);
+                          }
+                        }}
+                        title={cartoon.name}
+                      >
+                        <div dangerouslySetInnerHTML={{ __html: cartoon.svg }} style={{ width: "100%", height: "100%" }} />
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -4269,6 +4364,31 @@ Important:
               and unlock full saved-list sync.
             </p>
           )}
+
+          {/* Preferences Section */}
+          <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "16px", marginTop: "16px", marginBottom: "16px" }}>
+            <h3 style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px", color: "#475569" }}>Preferences</h3>
+            <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={disableEmojis}
+                onChange={async (e) => {
+                  const val = e.target.checked;
+                  setDisableEmojis(val);
+                  if (auth.currentUser && db) {
+                    try {
+                      const userRef = doc(db, "users", auth.currentUser.uid);
+                      await setDoc(userRef, { disableEmojis: val }, { merge: true });
+                    } catch (err) {
+                      console.error("Error saving emoji preference", err);
+                    }
+                  }
+                }}
+                style={{ width: "16px", height: "16px", cursor: "pointer" }}
+              />
+              <span style={{ fontSize: "14px", color: "#334155", fontWeight: "500" }}>Remove all emojis from the app</span>
+            </label>
+          </div>
 
           <div style={styles.authActionRow}>
             {!accountUser.emailVerified && (
@@ -5052,7 +5172,7 @@ Important:
               {scanHistory.map((scan) => (
                 <div key={scan.id} style={styles.historyItem}>
                   <div style={styles.historyMeta}>
-                    <strong style={styles.historyItemTitle}>📷 {scan.imageName}</strong>
+                    <strong style={styles.historyItemTitle}>{e("📷", scan.imageName)}</strong>
                     <span style={styles.historyDate}>
                       {new Date(scan.createdAt).toLocaleString()} · {scan.bookCount} books · {scan.model}
                     </span>
@@ -5243,7 +5363,7 @@ Important:
     <div style={styles.page}>
       {isOffline && (
         <div style={styles.offlineBanner} role="alert">
-          📡 You are offline. Scans and cloud synchronization are temporarily disabled.
+          {e("📡", "You are offline. Scans and cloud synchronization are temporarily disabled.")}
         </div>
       )}
       <div className="idle-background" aria-hidden="true">
@@ -5369,7 +5489,7 @@ Important:
           }}
           onClick={() => { setCameraIdle(false); handleScanPickerClick(); }}
         >
-          📷 Take Photo
+          {e("📷", "Take Photo")}
           <input
             type="file"
             accept="image/*"
@@ -5399,7 +5519,7 @@ Important:
           }}
           onClick={openManualBookModal}
         >
-          ✍️ Add Book Manually
+          {e("✍️", "Add Book Manually")}
         </button>
       </div>
 
@@ -5497,7 +5617,7 @@ Important:
       {currentPage === "scan" && compare.length > 0 && (
         <section style={styles.compareTray}>
           <div>
-            <h2 style={{ ...styles.sectionTitle, marginTop: 0 }}>⚖️ Compare Books</h2>
+            <h2 style={{ ...styles.sectionTitle, marginTop: 0 }}>{e("⚖️", "Compare Books")}</h2>
             <p style={styles.countText}>
               {compare.length === 1
                 ? "Choose one more book to compare side by side."
@@ -5744,7 +5864,7 @@ Important:
                     disabled={previewButton.disabled}
                     aria-disabled={previewButton.disabled}
                   >
-                    📖 {previewButton.label}
+                    {e("📖", previewButton.label)}
                   </button>
 
                   <button
@@ -6069,7 +6189,7 @@ Important:
       {manualBookModalOpen && (
         <div style={styles.modal} onClick={closeManualBookModal}>
           <form style={{ ...styles.promptModalContent, maxWidth: "450px" }} onSubmit={saveManualBook} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.promptIcon} aria-hidden="true">📖</div>
+            {!disableEmojis && <div style={styles.promptIcon} aria-hidden="true">📖</div>}
             <h2 style={styles.modalTitle}>Add Book Manually</h2>
             <p style={styles.previewSubtitle}>Enter the details of the book you want to add.</p>
             
