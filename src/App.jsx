@@ -1554,6 +1554,50 @@ function generateRandomAvatarSvg() {
   </svg>`;
 }
 
+function getAvatarSvgContent({ bgColor, accentColor, accessory, eyeSize, mouth, bgImage }) {
+  const mouthY = 56;
+  let mouthSvg = "";
+  if (mouth === "smile") {
+    mouthSvg = `<path d="M 35 ${mouthY} Q 50 ${mouthY + 10} 65 ${mouthY}" stroke="${accentColor}" stroke-width="4" fill="none" stroke-linecap="round"/>`;
+  } else if (mouth === "circle") {
+    mouthSvg = `<ellipse cx="50" cy="${mouthY}" rx="6" ry="6" fill="${accentColor}"/>`;
+  } else {
+    mouthSvg = `<ellipse cx="50" cy="${mouthY}" rx="8" ry="4" fill="${accentColor}"/>`;
+  }
+
+  let accessorySvg = "";
+  if (accessory === "bunny") {
+    accessorySvg = `<ellipse cx="30" cy="18" rx="8" ry="20" fill="${bgColor || "#fed7aa"}" stroke="${accentColor}" stroke-width="2"/>
+                    <ellipse cx="70" cy="18" rx="8" ry="20" fill="${bgColor || "#fed7aa"}" stroke="${accentColor}" stroke-width="2"/>`;
+  } else if (accessory === "round") {
+    accessorySvg = `<circle cx="22" cy="28" r="14" fill="${bgColor || "#fed7aa"}" stroke="${accentColor}" stroke-width="2"/>
+                    <circle cx="78" cy="28" r="14" fill="${bgColor || "#fed7aa"}" stroke="${accentColor}" stroke-width="2"/>`;
+  } else if (accessory === "horn") {
+    accessorySvg = `<polygon points="50,5 38,25 62,25" fill="${accentColor}"/>`;
+  } else if (accessory === "blush") {
+    accessorySvg = `<circle cx="30" cy="54" r="6" fill="#f43f5e" opacity="0.4"/>
+                    <circle cx="70" cy="54" r="6" fill="#f43f5e" opacity="0.4"/>`;
+  }
+
+  const bgShape = bgImage
+    ? `<defs>
+         <clipPath id="circle-clip">
+           <circle cx="50" cy="50" r="42" />
+         </clipPath>
+       </defs>
+       <image href="${bgImage}" x="8" y="8" width="84" height="84" clip-path="url(#circle-clip)" preserveAspectRatio="xMidYMid slice"/>
+       <circle cx="50" cy="50" r="42" fill="none" stroke="${accentColor}" stroke-width="3"/>`
+    : `<circle cx="50" cy="50" r="42" fill="${bgColor}" stroke="${accentColor}" stroke-width="3"/>`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    ${accessorySvg}
+    ${bgShape}
+    <circle cx="38" cy="46" r="${eyeSize}" fill="#000"/>
+    <circle cx="62" cy="46" r="${eyeSize}" fill="#000"/>
+    ${mouthSvg}
+  </svg>`;
+}
+
 const THEMES = [
   { id: "classic-blue", name: "Classic Blue", emoji: "🔵" },
   { id: "dark", name: "Dark Mode", emoji: "🌙" },
@@ -1575,6 +1619,14 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", appTheme);
     writeStoredJson("appTheme", appTheme);
   }, [appTheme]);
+
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
+  const [avatarBgColor, setAvatarBgColor] = useState("#fbcfe8");
+  const [avatarAccentColor, setAvatarAccentColor] = useState("#db2777");
+  const [avatarAccessory, setAvatarAccessory] = useState("none");
+  const [avatarEyeSize, setAvatarEyeSize] = useState(4);
+  const [avatarMouth, setAvatarMouth] = useState("smile");
+  const [avatarBgImage, setAvatarBgImage] = useState(null);
 
   const [imagePreview, setImagePreview] = useState(null);
   const [shelfPhotoHistory, setShelfPhotoHistory] = useState([]);
@@ -4512,54 +4564,18 @@ Important:
                       fontWeight: "600",
                       cursor: "pointer",
                     }}
-                    onClick={async () => {
-                      try {
-                        setAuthLoading(true);
-                        const generatedSvg = generateRandomAvatarSvg();
-                        const cartoonUrl = "data:image/svg+xml;utf8," + encodeURIComponent(generatedSvg);
-                        localStorage.setItem("profilePic_" + auth.currentUser.uid, cartoonUrl);
-                        setUser((prev) => ({ ...prev, customPhotoURL: cartoonUrl }));
-                        
-                        if (db) {
-                          const userRef = doc(db, "users", auth.currentUser.uid);
-                          await setDoc(userRef, { customPhotoURL: cartoonUrl }, { merge: true });
-                        }
-                        setAuthMessage("Unique cartoon character generated and updated!");
-                      } catch (err) {
-                        console.error("Error generating avatar", err);
-                      } finally {
-                        setAuthLoading(false);
-                      }
+                    onClick={() => {
+                      setAvatarBgColor("#fbcfe8");
+                      setAvatarAccentColor("#db2777");
+                      setAvatarAccessory("none");
+                      setAvatarEyeSize(4);
+                      setAvatarMouth("smile");
+                      setAvatarBgImage(null);
+                      setAvatarModalOpen(true);
                     }}
                   >
                     🎨 Create Character
                   </button>
-
-                  <label
-                    style={{
-                      ...styles.authSecondaryButton,
-                      fontSize: "12px",
-                      padding: "6px 12px",
-                      borderRadius: "6px",
-                      background: "#ffffff",
-                      border: "1px solid #cbd5e1",
-                      color: "#475569",
-                      fontWeight: "600",
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    📤 Upload Character
-                    <input
-                      type="file"
-                      accept="image/*"
-                      style={{ display: "none" }}
-                      onChange={handleProfilePictureUpload}
-                      disabled={authLoading}
-                    />
-                  </label>
                 </div>
               </div>
             </div>
@@ -6574,6 +6590,237 @@ Important:
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {avatarModalOpen && (
+        <div style={styles.modal} onClick={() => setAvatarModalOpen(false)}>
+          <div style={{ ...styles.promptModalContent, maxWidth: "450px" }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>🎨 Avatar Creator</h2>
+            <p style={styles.previewSubtitle}>Create your own custom cartoon character!</p>
+
+            {/* Live Preview */}
+            <div style={{
+              display: "flex",
+              justifyContent: "center",
+              margin: "16px 0",
+              background: "var(--code-bg)",
+              borderRadius: "12px",
+              padding: "16px",
+              border: "1px solid var(--border)"
+            }}>
+              <div
+                style={{ width: "100px", height: "100px", borderRadius: "50%", overflow: "hidden", backgroundColor: "#f8fafc", border: "2px solid #e2e8f0" }}
+                dangerouslySetInnerHTML={{
+                  __html: getAvatarSvgContent({
+                    bgColor: avatarBgColor,
+                    accentColor: avatarAccentColor,
+                    accessory: avatarAccessory,
+                    eyeSize: avatarEyeSize,
+                    mouth: avatarMouth,
+                    bgImage: avatarBgImage
+                  })
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%", textAlign: "left", maxHeight: "55vh", overflowY: "auto", paddingRight: "4px" }}>
+              {/* Accessory select */}
+              <label style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600" }}>Accessory Style</span>
+                <select
+                  style={styles.filterControl}
+                  value={avatarAccessory}
+                  onChange={(e) => setAvatarAccessory(e.target.value)}
+                >
+                  <option value="none">None 🟡</option>
+                  <option value="bunny">🐰 Bunny Ears</option>
+                  <option value="round">🐻 Round Ears</option>
+                  <option value="horn">🦄 Magical Horn</option>
+                  <option value="blush">😊 Blushing Cheeks</option>
+                </select>
+              </label>
+
+              {/* Mouth Style select */}
+              <label style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600" }}>Mouth Style</span>
+                <select
+                  style={styles.filterControl}
+                  value={avatarMouth}
+                  onChange={(e) => setAvatarMouth(e.target.value)}
+                >
+                  <option value="smile">Smile 😊</option>
+                  <option value="circle">O shape 😮</option>
+                  <option value="open">Open Mouth 😃</option>
+                </select>
+              </label>
+
+              {/* Eye size slider */}
+              <label style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600" }}>Eye Size ({avatarEyeSize})</span>
+                <input
+                  type="range"
+                  min="2"
+                  max="7"
+                  step="0.5"
+                  value={avatarEyeSize}
+                  onChange={(e) => setAvatarEyeSize(parseFloat(e.target.value))}
+                  style={{ width: "100%", cursor: "pointer" }}
+                />
+              </label>
+
+              {/* Background Color Swatches */}
+              <div style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600", marginBottom: "4px" }}>Background Color</span>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {["#fbcfe8", "#fed7aa", "#bbf7d0", "#fef08a", "#e2e8f0", "#c084fc", "#60a5fa", "#f472b6"].map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => {
+                        setAvatarBgColor(color);
+                        setAvatarBgImage(null);
+                      }}
+                      style={{
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "50%",
+                        backgroundColor: color,
+                        border: avatarBgColor === color && !avatarBgImage ? "2.5px solid #000000" : "1.5px solid #cbd5e1",
+                        cursor: "pointer",
+                        padding: 0
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Accent/Line Color Swatches */}
+              <div style={styles.filterLabel}>
+                <span style={{ fontSize: "13px", fontWeight: "600", marginBottom: "4px" }}>Line & Detail Color</span>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {["#db2777", "#ea580c", "#16a34a", "#ca8a04", "#475569", "#7c3aed", "#be185d", "#2563eb"].map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setAvatarAccentColor(color)}
+                      style={{
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "50%",
+                        backgroundColor: color,
+                        border: avatarAccentColor === color ? "2.5px solid #ffffff" : "1.5px solid #cbd5e1",
+                        boxShadow: avatarAccentColor === color ? "0 0 4px rgba(0,0,0,0.5)" : "none",
+                        cursor: "pointer",
+                        padding: 0
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Upload Custom Background Image Option */}
+              <div style={{ ...styles.filterLabel, borderTop: "1px solid var(--border)", paddingTop: "12px", marginTop: "4px" }}>
+                <span style={{ fontSize: "13px", fontWeight: "600" }}>Upload Custom Character Background</span>
+                <label
+                  style={{
+                    ...styles.authSecondaryButton,
+                    fontSize: "12px",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    background: "#ffffff",
+                    border: "1px solid #cbd5e1",
+                    color: "#475569",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginTop: "6px"
+                  }}
+                >
+                  🖼️ Choose Background Image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (e) => {
+                        setAvatarBgImage(e.target.result);
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+                {avatarBgImage && (
+                  <button
+                    type="button"
+                    style={{
+                      border: "none",
+                      background: "none",
+                      color: "#dc2626",
+                      fontSize: "11px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      marginTop: "4px",
+                      padding: 0
+                    }}
+                    onClick={() => setAvatarBgImage(null)}
+                  >
+                    ❌ Remove background image
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ ...styles.previewActionRow, marginTop: "20px" }}>
+              <button
+                type="button"
+                style={styles.authPrimaryButton}
+                onClick={async () => {
+                  try {
+                    setAuthLoading(true);
+                    const finalSvg = getAvatarSvgContent({
+                      bgColor: avatarBgColor,
+                      accentColor: avatarAccentColor,
+                      accessory: avatarAccessory,
+                      eyeSize: avatarEyeSize,
+                      mouth: avatarMouth,
+                      bgImage: avatarBgImage
+                    });
+                    const cartoonUrl = "data:image/svg+xml;utf8," + encodeURIComponent(finalSvg);
+                    localStorage.setItem("profilePic_" + auth.currentUser.uid, cartoonUrl);
+                    setUser((prev) => ({ ...prev, customPhotoURL: cartoonUrl }));
+
+                    if (db) {
+                      const userRef = doc(db, "users", auth.currentUser.uid);
+                      await setDoc(userRef, { customPhotoURL: cartoonUrl }, { merge: true });
+                    }
+                    setAuthMessage("Custom cartoon character saved!");
+                    setAvatarModalOpen(false);
+                  } catch (err) {
+                    console.error("Error saving custom avatar", err);
+                  } finally {
+                    setAuthLoading(false);
+                  }
+                }}
+              >
+                Save Character
+              </button>
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => setAvatarModalOpen(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
