@@ -1443,12 +1443,20 @@ function matchesStructuredFilters(book, filters) {
 
 /* eslint-disable react-refresh/only-export-components */
 export {
+  canOpenSavedBookPreview,
   cleanJsonText,
+  enrichScannedBook,
   getBookKey,
   getCode128Bars,
   getContentGuidance,
   getFriendlyScanError,
+  getSafeFileName,
+  getSavedBookGroups,
+  getSavedFileKey,
+  getScanConfidenceDisplayLabel,
   getSearchIntent,
+  getTimeGreeting,
+  isValidEmail,
   matchesSearchIntent,
   matchesStructuredFilters,
   mergeUniqueByKey,
@@ -1504,6 +1512,7 @@ export default function App() {
   };
 
   const [imagePreview, setImagePreview] = useState(null);
+  const [shelfPhotoHistory, setShelfPhotoHistory] = useState([]);
   const [books, setBooks] = useState([]);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(() => normalizeFilters(DEFAULT_FILTERS));
@@ -2805,7 +2814,12 @@ Do not include explanations.
     setVoiceStatus("");
     setVoiceListening(false);
     recognitionRef.current?.abort();
-    setImagePreview(URL.createObjectURL(file));
+    const newObjectUrl = URL.createObjectURL(file);
+    setImagePreview(newObjectUrl);
+    setShelfPhotoHistory((prev) => {
+      const next = [newObjectUrl, ...prev.filter((u) => u !== newObjectUrl)];
+      return next.slice(0, 5);
+    });
 
     let geminiCallStarted = false;
     try {
@@ -4020,7 +4034,7 @@ Important:
                   toggleCompare(book);
                 }}
               >
-                {compareSelected ? "Comparing" : e("⚖️", "Compare")}
+                {compareSelected ? "Pick another book" : e("⚖️", "Compare")}
               </button>
             </div>
 
@@ -5537,6 +5551,36 @@ Important:
           >
             Clear scanned image
           </button>
+        </div>
+      )}
+
+      {shelfPhotoHistory.length > 1 && (
+        <div style={{ padding: "0 16px 12px" }}>
+          <p style={{ fontSize: "12px", color: "#718096", marginBottom: "8px", fontWeight: "600" }}>Shelf Photo History ({shelfPhotoHistory.length}/5)</p>
+          <div style={{ display: "flex", gap: "8px", overflowX: "auto", paddingBottom: "4px" }}>
+            {shelfPhotoHistory.map((url, idx) => (
+              <button
+                key={url}
+                type="button"
+                onClick={() => setImagePreview(url)}
+                aria-label={`Shelf photo ${idx + 1}`}
+                style={{
+                  padding: 0,
+                  border: url === imagePreview ? "2px solid #6366f1" : "2px solid transparent",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  background: "none",
+                  flexShrink: 0,
+                }}
+              >
+                <img
+                  src={url}
+                  alt={`Shelf ${idx + 1}`}
+                  style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "6px", display: "block" }}
+                />
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
