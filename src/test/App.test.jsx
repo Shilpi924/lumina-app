@@ -618,16 +618,16 @@ describe("Shelf Photo History Logic", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// 19. COMPARE BUTTON LABEL (new feature: "Pick another book")
+// 19. COMPARE BUTTON LABEL (new feature: "Pick another book to compare")
 // ─────────────────────────────────────────────────────────────
 describe("Compare Button Label", () => {
   function getCompareLabel(compareSelected, disableEmojis = false) {
     const eHelper = (emoji, text) => (disableEmojis ? text : `${emoji} ${text}`);
-    return compareSelected ? "Pick another book" : eHelper("⚖️", "Compare");
+    return compareSelected ? "Pick another book to compare" : eHelper("⚖️", "Compare");
   }
 
-  it('shows "Pick another book" when book is in compare slot', () => {
-    expect(getCompareLabel(true)).toBe("Pick another book");
+  it('shows "Pick another book to compare" when book is in compare slot', () => {
+    expect(getCompareLabel(true)).toBe("Pick another book to compare");
   });
 
   it('shows "⚖️ Compare" when book is not in compare slot', () => {
@@ -638,9 +638,9 @@ describe("Compare Button Label", () => {
     expect(getCompareLabel(false, true)).toBe("Compare");
   });
 
-  it('always shows "Pick another book" regardless of emoji setting', () => {
-    expect(getCompareLabel(true, true)).toBe("Pick another book");
-    expect(getCompareLabel(true, false)).toBe("Pick another book");
+  it('always shows "Pick another book to compare" regardless of emoji setting', () => {
+    expect(getCompareLabel(true, true)).toBe("Pick another book to compare");
+    expect(getCompareLabel(true, false)).toBe("Pick another book to compare");
   });
 });
 

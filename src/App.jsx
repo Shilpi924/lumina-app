@@ -4034,7 +4034,7 @@ Important:
                   toggleCompare(book);
                 }}
               >
-                {compareSelected ? "Pick another book" : e("⚖️", "Compare")}
+                {compareSelected ? "Pick another book to compare" : e("⚖️", "Compare")}
               </button>
             </div>
 
