@@ -5973,14 +5973,26 @@ Important:
             aria-live="polite"
             aria-label="Processing bookshelf photo"
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "16px", alignSelf: "stretch" }}>
-              <div className="scan-processing-orbit" aria-hidden="true">
-                <span className="scan-processing-core" />
+            <div className="playful-loader-container" aria-hidden="true">
+              <div className="playful-bookshelf">
+                <div className="playful-book book-left"></div>
+                <div className="playful-book book-middle">
+                  <div className="page-flip"></div>
+                </div>
+                <div className="playful-book book-right"></div>
               </div>
-              <div style={styles.processingCopy}>
-                <h2 style={styles.processingTitle}>Lumina AI is scanning...</h2>
-                <p style={styles.processingText}>Reading shelf layout & book spines</p>
+              <div className="floating-sparkles">
+                <span className="sparkle star-1">⭐</span>
+                <span className="sparkle star-2">✨</span>
+                <span className="sparkle star-3">📖</span>
+                <span className="sparkle star-4">✨</span>
+                <span className="sparkle star-5">⭐</span>
               </div>
+            </div>
+
+            <div style={{ textAlign: "center", alignSelf: "stretch" }}>
+              <h2 style={{ ...styles.processingTitle, margin: "0 0 4px 0" }}>Lumina AI is scanning...</h2>
+              <p style={{ ...styles.processingText, margin: 0 }}>Reading shelf layout & book spines</p>
             </div>
 
             {imagePreview && (

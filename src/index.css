@@ -889,3 +889,118 @@ code {
     transition: none !important;
   }
 }
+
+/* Playful Bookshelf Loader Animation for Kids */
+.playful-loader-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0 12px;
+  position: relative;
+  width: 100%;
+}
+
+.playful-bookshelf {
+  position: relative;
+  width: 180px;
+  height: 90px;
+  border-bottom: 6px solid #4f46e5;
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  padding: 0 16px;
+  margin-bottom: 16px;
+}
+
+.playful-book {
+  width: 26px;
+  border-radius: 4px 4px 0 0;
+  position: relative;
+  transform-origin: bottom center;
+}
+
+.book-left {
+  height: 65px;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  animation: book-bounce-left 2s ease-in-out infinite;
+}
+
+.book-middle {
+  height: 75px;
+  background: linear-gradient(135deg, #10b981, #047857);
+  animation: book-bounce-middle 2s ease-in-out infinite;
+}
+
+.book-right {
+  height: 60px;
+  background: linear-gradient(135deg, #f59e0b, #b45309);
+  animation: book-bounce-right 2s ease-in-out infinite;
+}
+
+/* Page flip effect for the middle book */
+.page-flip {
+  position: absolute;
+  top: 5px;
+  right: 2px;
+  width: 20px;
+  height: 65px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 2px 2px 0 0;
+  transform-origin: left center;
+  animation: page-flip-anim 1s ease-in-out infinite alternate;
+}
+
+@keyframes book-bounce-left {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-12px) rotate(-8deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+}
+
+@keyframes book-bounce-middle {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  40% { transform: translateY(-16px) scaleY(1.05); }
+  80% { transform: translateY(0) scaleY(1); }
+}
+
+@keyframes book-bounce-right {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  60% { transform: translateY(-10px) rotate(8deg); }
+  80% { transform: translateY(0) rotate(0deg); }
+}
+
+@keyframes page-flip-anim {
+  0% { transform: rotateY(0deg); opacity: 0.8; }
+  100% { transform: rotateY(-130deg); opacity: 0; }
+}
+
+/* Floating Sparkles & Book Icons */
+.floating-sparkles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.sparkle {
+  position: absolute;
+  font-size: 16px;
+  opacity: 0;
+  animation: float-sparkle 3s linear infinite;
+}
+
+.star-1 { left: 15%; top: 60%; animation-delay: 0s; font-size: 18px; }
+.star-2 { left: 30%; top: 40%; animation-delay: 0.8s; }
+.star-3 { left: 50%; top: 30%; animation-delay: 1.5s; font-size: 20px; }
+.star-4 { left: 70%; top: 50%; animation-delay: 0.4s; }
+.star-5 { left: 85%; top: 70%; animation-delay: 1.2s; font-size: 18px; }
+
+@keyframes float-sparkle {
+  0% { transform: translateY(30px) scale(0.5) rotate(0deg); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(-80px) scale(1.2) rotate(360deg); opacity: 0; }
+}
