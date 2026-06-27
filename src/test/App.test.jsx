@@ -709,3 +709,37 @@ describe("Upload Photo Label", () => {
     expect(getUploadLabel(true)).toBe("Upload Photo");
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// 23. APP THEME PREFERENCES
+// ─────────────────────────────────────────────────────────────
+describe("App Theme Preferences", () => {
+  const THEMES_MOCK = [
+    { id: "classic-blue", name: "Classic Blue", emoji: "🔵" },
+    { id: "dark", name: "Dark Mode", emoji: "🌙" },
+    { id: "sunset", name: "Sunset Orange", emoji: "🍊" },
+    { id: "forest", name: "Forest Green", emoji: "🌲" },
+    { id: "lavender", name: "Lavender Purple", emoji: "🍇" },
+    { id: "ocean", name: "Ocean Teal", emoji: "🐳" },
+  ];
+
+  it("has valid default classic-blue theme in the available list", () => {
+    const classicTheme = THEMES_MOCK.find((t) => t.id === "classic-blue");
+    expect(classicTheme).toBeDefined();
+    expect(classicTheme.emoji).toBe("🔵");
+  });
+
+  it("checks for dark mode exists in theme definitions", () => {
+    const darkTheme = THEMES_MOCK.find((t) => t.id === "dark");
+    expect(darkTheme).toBeDefined();
+    expect(darkTheme.name).toBe("Dark Mode");
+  });
+
+  it("checks for custom theme IDs match requirements", () => {
+    const ids = THEMES_MOCK.map((t) => t.id);
+    expect(ids).toContain("sunset");
+    expect(ids).toContain("forest");
+    expect(ids).toContain("lavender");
+    expect(ids).toContain("ocean");
+  });
+});

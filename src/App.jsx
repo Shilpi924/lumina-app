@@ -1504,12 +1504,27 @@ const CARTOONS = [
   }
 ];
 
+const THEMES = [
+  { id: "classic-blue", name: "Classic Blue", emoji: "🔵" },
+  { id: "dark", name: "Dark Mode", emoji: "🌙" },
+  { id: "sunset", name: "Sunset Orange", emoji: "🍊" },
+  { id: "forest", name: "Forest Green", emoji: "🌲" },
+  { id: "lavender", name: "Lavender Purple", emoji: "🍇" },
+  { id: "ocean", name: "Ocean Teal", emoji: "🐳" },
+];
+
 export default function App() {
+  const [appTheme, setAppTheme] = useState(() => readStoredJson("appTheme", "classic-blue"));
   const [disableEmojis, setDisableEmojis] = useState(() => readStoredJson("disableEmojis", false));
   const e = (emoji, text = "") => {
     if (disableEmojis) return text;
     return text ? `${emoji} ${text}` : emoji;
   };
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", appTheme);
+    writeStoredJson("appTheme", appTheme);
+  }, [appTheme]);
 
   const [imagePreview, setImagePreview] = useState(null);
   const [shelfPhotoHistory, setShelfPhotoHistory] = useState([]);
@@ -1862,6 +1877,12 @@ export default function App() {
           setDisableEmojis(mergedDisableEmojis);
         }
 
+        let mergedAppTheme = appTheme;
+        if (userData.appTheme !== undefined) {
+          mergedAppTheme = userData.appTheme;
+          setAppTheme(mergedAppTheme);
+        }
+
         await setDoc(
           userRef,
           {
@@ -1871,6 +1892,7 @@ export default function App() {
             emailVerified: Boolean(firebaseUser.emailVerified),
             updatedAt: serverTimestamp(),
             disableEmojis: mergedDisableEmojis,
+            appTheme: mergedAppTheme,
           },
           { merge: true }
         );
@@ -4437,28 +4459,73 @@ Important:
           )}
 
           {/* Preferences Section */}
-          <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "16px", marginTop: "16px", marginBottom: "16px" }}>
-            <h3 style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px", color: "#475569" }}>Preferences</h3>
-            <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={disableEmojis}
-                onChange={async (e) => {
-                  const val = e.target.checked;
-                  setDisableEmojis(val);
-                  if (auth.currentUser && db) {
-                    try {
-                      const userRef = doc(db, "users", auth.currentUser.uid);
-                      await setDoc(userRef, { disableEmojis: val }, { merge: true });
-                    } catch (err) {
-                      console.error("Error saving emoji preference", err);
+          <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "16px", marginTop: "16px", marginBottom: "16px", display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div>
+              <h3 style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px", color: "#475569" }}>Preferences</h3>
+              <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={disableEmojis}
+                  onChange={async (e) => {
+                    const val = e.target.checked;
+                    setDisableEmojis(val);
+                    if (auth.currentUser && db) {
+                      try {
+                        const userRef = doc(db, "users", auth.currentUser.uid);
+                        await setDoc(userRef, { disableEmojis: val }, { merge: true });
+                      } catch (err) {
+                        console.error("Error saving emoji preference", err);
+                      }
                     }
-                  }
-                }}
-                style={{ width: "16px", height: "16px", cursor: "pointer" }}
-              />
-              <span style={{ fontSize: "14px", color: "#334155", fontWeight: "500" }}>Remove all emojis from the app</span>
-            </label>
+                  }}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                <span style={{ fontSize: "14px", color: "#334155", fontWeight: "500" }}>Remove all emojis from the app</span>
+              </label>
+            </div>
+
+            <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "12px" }}>
+              <h3 style={{ fontSize: "12px", fontWeight: "600", color: "#64748b", marginBottom: "8px" }}>App Theme:</h3>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {THEMES.map((themeItem) => {
+                  const isSelected = appTheme === themeItem.id;
+                  return (
+                    <button
+                      key={themeItem.id}
+                      type="button"
+                      style={{
+                        padding: "6px 12px",
+                        border: isSelected ? "2.5px solid #2563eb" : "1.5px solid #cbd5e1",
+                        background: isSelected ? "rgba(37, 99, 235, 0.08)" : "#ffffff",
+                        borderRadius: "20px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        color: isSelected ? "#2563eb" : "#475569",
+                        transition: "all 150ms",
+                      }}
+                      onClick={async () => {
+                        setAppTheme(themeItem.id);
+                        if (auth.currentUser && db) {
+                          try {
+                            const userRef = doc(db, "users", auth.currentUser.uid);
+                            await setDoc(userRef, { appTheme: themeItem.id }, { merge: true });
+                          } catch (err) {
+                            console.error("Error saving theme preference", err);
+                          }
+                        }
+                      }}
+                    >
+                      <span>{themeItem.emoji}</span>
+                      <span>{themeItem.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           <div style={styles.authActionRow}>
