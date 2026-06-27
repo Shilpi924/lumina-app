@@ -1720,6 +1720,18 @@ export default function App() {
   }, [loading]);
 
   useEffect(() => {
+    if (selectedBook) {
+      window.scrollTo(0, 0);
+      setTimeout(() => {
+        const scrollEl = document.querySelector(".scan-modal-scroll");
+        if (scrollEl) {
+          scrollEl.scrollTop = 0;
+        }
+      }, 0);
+    }
+  }, [selectedBook]);
+
+  useEffect(() => {
     writeStoredJson("readingList", readingList);
   }, [readingList]);
 
@@ -5711,7 +5723,7 @@ Important:
           const previewButton = getPreviewButtonState(selectedBook);
 
           return (
-            <div style={styles.modal} onClick={() => setSelectedBook(null)}>
+            <div className="scan-modal-scroll" style={styles.modal} onClick={() => setSelectedBook(null)}>
               <div
                 style={{
                   ...styles.modalContent,
@@ -8182,7 +8194,7 @@ const styles = {
     inset: 0,
     background: "rgba(0, 0, 0, 0.72)",
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "center",
     padding: "20px",
     overflowY: "auto",
