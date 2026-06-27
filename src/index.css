@@ -1017,14 +1017,14 @@ code {
 
 :root[data-theme="dark"] {
   --text: #cbd5e1;
-  --text-h: #fdf2e9;
-  --bg: #1e1b4b;
-  --border: rgba(255, 255, 255, 0.12);
-  --code-bg: #312e81;
-  --accent: #f43f5e;
-  --accent-bg: rgba(244, 63, 94, 0.18);
-  --accent-border: rgba(244, 63, 94, 0.62);
-  --social-bg: rgba(49, 46, 129, 0.86);
+  --text-h: #ffffff;
+  --bg: #090d16;
+  --border: rgba(255, 255, 255, 0.1);
+  --code-bg: #1e293b;
+  --accent: #3b82f6;
+  --accent-bg: rgba(59, 130, 246, 0.18);
+  --accent-border: rgba(59, 130, 246, 0.6);
+  --social-bg: #111827;
 }
 
 :root[data-theme="sunset"] {
