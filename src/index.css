@@ -1013,6 +1013,9 @@ code {
   --bg: #f0f9ff;
   --text-h: #0369a1;
   --text: #075985;
+  --social-bg: rgba(255, 255, 255, 0.9);
+  --code-bg: #e0f2fe;
+  --border: rgba(2, 132, 199, 0.12);
 }
 
 :root[data-theme="dark"] {
@@ -1034,6 +1037,9 @@ code {
   --bg: #fffbeb;
   --text-h: #7c2d12;
   --text: #9a3412;
+  --social-bg: rgba(255, 255, 255, 0.9);
+  --code-bg: #fef3c7;
+  --border: rgba(249, 115, 22, 0.15);
 }
 
 :root[data-theme="forest"] {
@@ -1043,6 +1049,9 @@ code {
   --bg: #f0fdf4;
   --text-h: #14532d;
   --text: #166534;
+  --social-bg: rgba(255, 255, 255, 0.9);
+  --code-bg: #dcfce7;
+  --border: rgba(34, 197, 94, 0.15);
 }
 
 :root[data-theme="lavender"] {
@@ -1052,6 +1061,9 @@ code {
   --bg: #fdf2f8;
   --text-h: #701a75;
   --text: #86198f;
+  --social-bg: rgba(255, 255, 255, 0.9);
+  --code-bg: #fce7f3;
+  --border: rgba(236, 72, 153, 0.15);
 }
 
 :root[data-theme="ocean"] {
@@ -1061,4 +1073,7 @@ code {
   --bg: #ecfeff;
   --text-h: #083344;
   --text: #155e75;
+  --social-bg: rgba(255, 255, 255, 0.9);
+  --code-bg: #cffafe;
+  --border: rgba(6, 182, 212, 0.15);
 }
