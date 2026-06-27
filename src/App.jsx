@@ -4006,9 +4006,11 @@ Important:
                 options.prefix !== "library" && (
                   <button
                     type="button"
+                    disabled={books.length < 3}
                     style={{
                       ...styles.smallButton,
                       ...(shelfLocationOpen ? styles.selectedButton : {}),
+                      ...(books.length < 3 ? { opacity: 0.5, cursor: "not-allowed" } : {}),
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -5990,10 +5992,10 @@ Important:
             
             <div style={styles.progressStepsList}>
               {[
-                "Uploading bookshelf image...",
-                "Running AI spine recognition...",
-                "Matching grade bands & reading levels...",
-                "Tailoring recommended shelf picks...",
+                "Reading the books...",
+                "Analyzing the books...",
+                "Sorting by categories...",
+                "Getting info about the books...",
               ].map((stepText, index) => {
                 const isDone = loadingStep > index;
                 const isActive = loadingStep === index;

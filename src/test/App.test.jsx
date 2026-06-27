@@ -671,3 +671,23 @@ describe("Delete Confirmation Guard", () => {
     expect(result).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// 21. LOCATE ON SHELF BUTTON DISABILITY
+// ─────────────────────────────────────────────────────────────
+describe("Locate on Shelf Button Disability", () => {
+  function isLocateButtonDisabled(booksCount) {
+    return booksCount < 3;
+  }
+
+  it("should be disabled if books count is less than 3", () => {
+    expect(isLocateButtonDisabled(0)).toBe(true);
+    expect(isLocateButtonDisabled(1)).toBe(true);
+    expect(isLocateButtonDisabled(2)).toBe(true);
+  });
+
+  it("should be enabled if books count is 3 or more", () => {
+    expect(isLocateButtonDisabled(3)).toBe(false);
+    expect(isLocateButtonDisabled(5)).toBe(false);
+  });
+});
