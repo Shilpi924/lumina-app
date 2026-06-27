@@ -3137,9 +3137,14 @@ Important:
   }
 
   function isBookInReadingList(book) {
-    return readingList.some(
-      (savedBook) => getBookKey(savedBook) === getBookKey(book)
+    const bookKey = getBookKey(book);
+    const inList = readingList.some(
+      (savedBook) => getBookKey(savedBook) === bookKey
     );
+    const inFiles = savedFiles.some(
+      (file) => file.payload?.catalogBook && getBookKey(file.payload.catalogBook) === bookKey
+    );
+    return inList || inFiles;
   }
 
   function toggleReadingList(book) {
@@ -3153,6 +3158,15 @@ Important:
         ? currentList.filter((savedBook) => getBookKey(savedBook) !== bookKey)
         : [{ ...book, savedAt: new Date().toISOString() }, ...currentList]
     );
+
+    if (exists) {
+      const bookTitle = book.title;
+      const detailsKey = getSavedFileKey(bookTitle, "details");
+      const previewKey = getSavedFileKey(bookTitle, "preview");
+      setSavedFiles((currentFiles) =>
+        currentFiles.filter((file) => file.id !== detailsKey && file.id !== previewKey)
+      );
+    }
 
     setBookFolders((currentFolders) => {
       if (exists) {
@@ -3947,23 +3961,52 @@ Important:
             <p>{book.summary}</p>
 
             <div style={styles.buttonRow}>
-              {options.prefix !== "library" && (
-                <button
-                  type="button"
-                  style={{
-                    ...styles.smallButton,
-                    ...(shelfLocationOpen ? styles.selectedButton : {}),
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpenShelfLocations((locations) => ({
-                      ...locations,
-                      [bookKey]: !shelfLocationOpen,
-                    }));
-                  }}
-                >
-                  {e("📍", "Locate on Shelf")}
-                </button>
+              {options.prefix === "saved-file" ? (
+                <>
+                  {canOpenSavedBookPreview(options.savedBook) && (
+                    <button
+                      type="button"
+                      style={styles.smallButton}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openSavedBookPreview(options.savedBook);
+                      }}
+                    >
+                      Open Preview
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    style={styles.deleteButton}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Are you sure you want to delete the downloaded file for "${book.title}"?`)) {
+                        deleteSavedBook(options.savedBook);
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                </>
+              ) : (
+                options.prefix !== "library" && (
+                  <button
+                    type="button"
+                    style={{
+                      ...styles.smallButton,
+                      ...(shelfLocationOpen ? styles.selectedButton : {}),
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenShelfLocations((locations) => ({
+                        ...locations,
+                        [bookKey]: !shelfLocationOpen,
+                      }));
+                    }}
+                  >
+                    {e("📍", "Locate on Shelf")}
+                  </button>
+                )
               )}
 
               <button
@@ -4904,86 +4947,21 @@ Important:
           <p style={styles.saveStatus}>{saveStatus.message}</p>
         )}
 
-        {savedBooks.length === 0 ? (
+        {savedBooks.filter((sb) => sb.catalogBook).length === 0 ? (
           <p style={styles.countText}>
             No books yet. Add favorites from Details, or save preview/details
             from a popup.
           </p>
         ) : (
-          <div style={styles.savedFileList}>
-            {savedBooks.map((savedBook) => (
-              <div
-                key={`${sectionKey}-${savedBook.id}`}
-                className="saved-file-item"
-                style={styles.savedFileItem}
-              >
-                <div className="saved-file-info" style={styles.savedFileInfo}>
-                  <button
-                    className="saved-file-name-button"
-                    style={styles.savedFileNameButton}
-                    onClick={() =>
-                      savedBook.catalogBook && setSelectedBook(savedBook.catalogBook)
-                    }
-                  >
-                    {savedBook.bookTitle}
-                  </button>
-                  <p style={styles.savedFileMeta}>
-                    {new Date(savedBook.savedAt).toLocaleDateString()}
-                  </p>
-                </div>
-
-                <div className="saved-file-actions" style={styles.savedFileActions}>
-                  {savedBook.catalogBook && (
-                    <select
-                      style={styles.inlineSelect}
-                      value={
-                        bookFolders[getBookKey(savedBook.catalogBook)] ||
-                        "Want to read"
-                      }
-                      onChange={(event) =>
-                        handleSavedBookFolderSelect(savedBook, event.target.value)
-                      }
-                      aria-label={`Folder for ${savedBook.bookTitle}`}
-                    >
-                      {getVisibleFolders(folders).map((folder) => (
-                        <option key={folder} value={folder}>
-                          {getFolderDisplayLabel(folder)}
-                        </option>
-                      ))}
-                      <option value={NEW_FOLDER_OPTION}>Add new folder...</option>
-                    </select>
-                  )}
-
-                  {canOpenSavedBookPreview(savedBook) ? (
-                    <button
-                      style={styles.smallButton}
-                      onClick={() => openSavedBookPreview(savedBook)}
-                    >
-                      Open Preview
-                    </button>
-                  ) : (
-                    <span style={styles.noPreviewBadge}>{NO_PREVIEW_LABEL}</span>
-                  )}
-
-                  <button
-                    style={styles.deleteButton}
-                    onClick={() => {
-                      if (savedBook.source !== "favorite") deleteSavedBook(savedBook);
-                      if (savedBook.favorite) {
-                        setReadingList((currentList) =>
-                          currentList.filter(
-                            (book) =>
-                              getBookKey(book) !== getBookKey(savedBook.catalogBook)
-                          )
-                        );
-                      }
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div style={styles.grid}>
+            {savedBooks
+              .filter((savedBook) => savedBook.catalogBook)
+              .map((savedBook, idx) =>
+                renderBookCard(savedBook.catalogBook, idx, {
+                  prefix: "saved-file",
+                  savedBook,
+                })
+              )}
           </div>
         )}
         </>
@@ -5068,10 +5046,25 @@ Important:
   function renderSavedBooksPage() {
     const visibleFolders = getVisibleFolders(folders);
     const folderTabs = ["All", ...visibleFolders];
-    const libraryBooks = readingList.filter((book) => {
-      if (activeFolder === "All") return true;
-      return (bookFolders[getBookKey(book)] || "Want to read") === activeFolder;
-    });
+    const libraryBooks = (() => {
+      const booksMap = new Map();
+      readingList.forEach((book) => {
+        booksMap.set(getBookKey(book), book);
+      });
+      savedFiles.forEach((file) => {
+        if (file.payload?.catalogBook) {
+          const key = getBookKey(file.payload.catalogBook);
+          if (!booksMap.has(key)) {
+            booksMap.set(key, file.payload.catalogBook);
+          }
+        }
+      });
+      const list = [...booksMap.values()];
+      return list.filter((book) => {
+        if (activeFolder === "All") return true;
+        return (bookFolders[getBookKey(book)] || "Want to read") === activeFolder;
+      });
+    })();
 
     return (
       <section style={styles.pagePanel}>
