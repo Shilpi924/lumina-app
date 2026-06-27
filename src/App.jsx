@@ -5073,8 +5073,7 @@ Important:
 
   function renderSavedBooksPage() {
     const visibleFolders = getVisibleFolders(folders);
-    const folderTabs = ["All", ...visibleFolders];
-    const libraryBooks = (() => {
+    const unifiedBooks = (() => {
       const booksMap = new Map();
       readingList.forEach((book) => {
         booksMap.set(getBookKey(book), book);
@@ -5087,11 +5086,7 @@ Important:
           }
         }
       });
-      const list = [...booksMap.values()];
-      return list.filter((book) => {
-        if (activeFolder === "All") return true;
-        return (bookFolders[getBookKey(book)] || "Want to read") === activeFolder;
-      });
+      return [...booksMap.values()];
     })();
 
     return (
@@ -5101,54 +5096,13 @@ Important:
         </div>
 
         {renderCollapsibleSection({
-          id: "libraryFolders",
-          title: "Folders",
-          meta: `${folderTabs.length}`,
+          id: "libraryFavorites",
+          title: "Favorites",
+          meta: `${unifiedBooks.length}`,
           defaultOpen: true,
           children: (
             <>
-              <div style={styles.folderToolbar}>
-                <div style={styles.folderTabs}>
-                  {folderTabs.map((folder) => {
-                    const isDeletable = folder !== "All";
-                    return (
-                      <div
-                        key={folder}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          position: "relative",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          style={{
-                            ...styles.navButton,
-                            ...(activeFolder === folder ? styles.navButtonActive : {}),
-                            paddingRight: isDeletable ? "28px" : "12px",
-                          }}
-                          onClick={() => setActiveFolder(folder)}
-                        >
-                          {folder}
-                        </button>
-                        {isDeletable && (
-                          <button
-                            type="button"
-                            style={styles.deleteFolderBadge}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteFolder(folder);
-                            }}
-                            title={`Delete ${folder} folder`}
-                            aria-label={`Delete ${folder} folder`}
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+              <div style={{ ...styles.folderToolbar, justifyContent: "flex-end", marginBottom: "16px" }}>
                 <button
                   type="button"
                   style={styles.authSecondaryButton}
@@ -5157,18 +5111,64 @@ Important:
                   Add folder
                 </button>
               </div>
+
               {saveStatus?.type === "folder" && (
                 <p style={styles.saveStatus}>{saveStatus.message}</p>
               )}
-              {libraryBooks.length === 0 ? (
-                <p style={styles.countText}>No saved books in this folder yet.</p>
-              ) : (
-                <div style={styles.grid}>
-                  {libraryBooks.map((book, index) =>
-                    renderBookCard(book, index, { prefix: "library" })
-                  )}
-                </div>
-              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                {visibleFolders.map((folderName) => {
+                  const folderBooks = unifiedBooks.filter(
+                    (book) => (bookFolders[getBookKey(book)] || "Want to read") === folderName
+                  );
+                  const isDeletable = !DEFAULT_FOLDERS.includes(folderName);
+
+                  return renderCollapsibleSection({
+                    id: `folder-${folderName}`,
+                    title: getFolderDisplayLabel(folderName),
+                    meta: `${folderBooks.length}`,
+                    defaultOpen: folderName === "Want to read" || folderBooks.length > 0,
+                    style: {
+                      background: "rgba(248, 250, 252, 0.6)",
+                      border: "1px solid rgba(34, 49, 71, 0.08)",
+                      borderRadius: "8px",
+                      margin: 0,
+                    },
+                    headerAction: isDeletable ? (
+                      <button
+                        type="button"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#ef4444",
+                          cursor: "pointer",
+                          fontWeight: "600",
+                          fontSize: "13px",
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteFolder(folderName);
+                        }}
+                      >
+                        Delete Folder
+                      </button>
+                    ) : null,
+                    children: (
+                      <>
+                        {folderBooks.length === 0 ? (
+                          <p style={{ ...styles.countText, padding: "12px 0 0" }}>No books in this folder.</p>
+                        ) : (
+                          <div style={{ ...styles.grid, padding: "12px 0 0" }}>
+                            {folderBooks.map((book, index) =>
+                              renderBookCard(book, index, { prefix: "library" })
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )
+                  });
+                })}
+              </div>
             </>
           ),
         })}
