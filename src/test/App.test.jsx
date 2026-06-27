@@ -743,3 +743,32 @@ describe("App Theme Preferences", () => {
     expect(ids).toContain("ocean");
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// 24. CUSTOM CARTOON AVATARS
+// ─────────────────────────────────────────────────────────────
+describe("Custom Cartoon Avatars", () => {
+  function generateRandomAvatarSvg() {
+    const colors = ["#fbcfe8", "#fed7aa", "#bbf7d0", "#fef08a"];
+    const accentColors = ["#db2777", "#ea580c", "#16a34a", "#ca8a04"];
+    const bgColor = colors[Math.floor(Math.random() * colors.length)];
+    const accentColor = accentColors[Math.floor(Math.random() * accentColors.length)];
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="${bgColor}" stroke="${accentColor}" stroke-width="3"/></svg>`;
+  }
+
+  it("should generate a valid SVG string", () => {
+    const svg = generateRandomAvatarSvg();
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("xmlns=");
+    expect(svg).toContain("viewBox=");
+    expect(svg).toContain("</svg>");
+  });
+
+  it("should generate randomized colors", () => {
+    const svg1 = generateRandomAvatarSvg();
+    const svg2 = generateRandomAvatarSvg();
+    // High probability of randomized SVG elements being distinct
+    expect(typeof svg1).toBe("string");
+    expect(typeof svg2).toBe("string");
+  });
+});

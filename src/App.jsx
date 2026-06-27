@@ -1501,8 +1501,58 @@ const CARTOONS = [
   {
     name: "Dog",
     svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="#e2e8f0"/><ellipse cx="22" cy="40" rx="10" ry="18" fill="#475569"/><ellipse cx="78" cy="40" rx="10" ry="18" fill="#475569"/><circle cx="40" cy="48" r="4" fill="#000"/><circle cx="60" cy="48" r="4" fill="#000"/><ellipse cx="50" cy="58" rx="7" ry="5" fill="#94a3b8"/><polygon points="48,56 52,56 50,59" fill="#000"/></svg>`
+  },
+  {
+    name: "Rabbit",
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><ellipse cx="30" cy="20" rx="8" ry="18" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/><ellipse cx="70" cy="20" rx="8" ry="18" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/><circle cx="50" cy="55" r="38" fill="#f9fafb"/><circle cx="38" cy="48" r="4" fill="#000"/><circle cx="62" cy="48" r="4" fill="#000"/><ellipse cx="50" cy="54" rx="4" ry="3" fill="#fda4af"/><ellipse cx="50" cy="62" rx="6" ry="4" fill="#f3f4f6"/><line x1="30" y1="56" x2="16" y2="52" stroke="#9ca3af" stroke-width="1.5"/><line x1="30" y1="60" x2="14" y2="60" stroke="#9ca3af" stroke-width="1.5"/><line x1="70" y1="56" x2="84" y2="52" stroke="#9ca3af" stroke-width="1.5"/><line x1="70" y1="60" x2="86" y2="60" stroke="#9ca3af" stroke-width="1.5"/></svg>`
+  },
+  {
+    name: "Panda",
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="28" cy="28" r="14" fill="#111827"/><circle cx="72" cy="28" r="14" fill="#111827"/><circle cx="50" cy="55" r="40" fill="#ffffff" stroke="#111827" stroke-width="2"/><ellipse cx="38" cy="50" rx="9" ry="11" fill="#111827" transform="rotate(-15 38 50)"/><ellipse cx="62" cy="50" rx="9" ry="11" fill="#111827" transform="rotate(15 62 50)"/><circle cx="38" cy="48" r="3.5" fill="#fff"/><circle cx="62" cy="48" r="3.5" fill="#fff"/><ellipse cx="50" cy="62" rx="6" ry="4" fill="#111827"/></svg>`
+  },
+  {
+    name: "Fox",
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="#ea580c"/><polygon points="20,30 10,5 35,22" fill="#c2410c"/><polygon points="80,30 90,5 65,22" fill="#c2410c"/><polygon points="12,50 50,90 88,50" fill="#fff"/><circle cx="35" cy="48" r="4.5" fill="#000"/><circle cx="65" cy="48" r="4.5" fill="#000"/><polygon points="46,65 54,65 50,72" fill="#000"/></svg>`
   }
 ];
+
+function generateRandomAvatarSvg() {
+  const colors = ["#fbcfe8", "#fed7aa", "#bbf7d0", "#fef08a", "#e2e8f0", "#c084fc", "#f472b6", "#60a5fa", "#34d399", "#fb7185"];
+  const accentColors = ["#db2777", "#ea580c", "#16a34a", "#ca8a04", "#475569", "#7c3aed", "#be185d", "#2563eb", "#059669", "#e11d48"];
+  
+  const bgColor = colors[Math.floor(Math.random() * colors.length)];
+  const accentColor = accentColors[Math.floor(Math.random() * accentColors.length)];
+  const eyeSize = 3 + Math.random() * 3;
+  const mouthCurve = 50 + Math.random() * 20;
+  
+  const mouthY = 56 + Math.random() * 6;
+  const mouthSvg = Math.random() > 0.5 
+    ? `<path d="M 35 ${mouthY} Q 50 ${mouthY + 12} 65 ${mouthY}" stroke="${accentColor}" stroke-width="4" fill="none" stroke-linecap="round"/>`
+    : `<ellipse cx="50" cy="${mouthY}" rx="${5 + Math.random() * 5}" ry="${3 + Math.random() * 3}" fill="${accentColor}"/>`;
+
+  const accessoryType = Math.floor(Math.random() * 4);
+  let accessorySvg = "";
+  if (accessoryType === 0) {
+    accessorySvg = `<ellipse cx="30" cy="18" rx="8" ry="20" fill="${bgColor}" stroke="${accentColor}" stroke-width="2"/>
+                    <ellipse cx="70" cy="18" rx="8" ry="20" fill="${bgColor}" stroke="${accentColor}" stroke-width="2"/>`;
+  } else if (accessoryType === 1) {
+    accessorySvg = `<circle cx="22" cy="28" r="14" fill="${bgColor}" stroke="${accentColor}" stroke-width="2"/>
+                    <circle cx="78" cy="28" r="14" fill="${bgColor}" stroke="${accentColor}" stroke-width="2"/>`;
+  } else if (accessoryType === 2) {
+    accessorySvg = `<polygon points="50,5 38,25 62,25" fill="${accentColor}"/>`;
+  } else {
+    accessorySvg = `<circle cx="30" cy="54" r="6" fill="#f43f5e" opacity="0.4"/>
+                    <circle cx="70" cy="54" r="6" fill="#f43f5e" opacity="0.4"/>`;
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    ${accessorySvg}
+    <circle cx="50" cy="50" r="42" fill="${bgColor}" stroke="${accentColor}" stroke-width="3"/>
+    <circle cx="38" cy="46" r="${eyeSize}" fill="#000"/>
+    <circle cx="62" cy="46" r="${eyeSize}" fill="#000"/>
+    ${mouthSvg}
+  </svg>`;
+}
 
 const THEMES = [
   { id: "classic-blue", name: "Classic Blue", emoji: "🔵" },
@@ -4446,6 +4496,70 @@ Important:
                       </button>
                     );
                   })}
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                  <button
+                    type="button"
+                    style={{
+                      ...styles.authSecondaryButton,
+                      fontSize: "12px",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      background: "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)",
+                      color: "#ffffff",
+                      border: "none",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                    }}
+                    onClick={async () => {
+                      try {
+                        setAuthLoading(true);
+                        const generatedSvg = generateRandomAvatarSvg();
+                        const cartoonUrl = "data:image/svg+xml;utf8," + encodeURIComponent(generatedSvg);
+                        localStorage.setItem("profilePic_" + auth.currentUser.uid, cartoonUrl);
+                        setUser((prev) => ({ ...prev, customPhotoURL: cartoonUrl }));
+                        
+                        if (db) {
+                          const userRef = doc(db, "users", auth.currentUser.uid);
+                          await setDoc(userRef, { customPhotoURL: cartoonUrl }, { merge: true });
+                        }
+                        setAuthMessage("Unique cartoon character generated and updated!");
+                      } catch (err) {
+                        console.error("Error generating avatar", err);
+                      } finally {
+                        setAuthLoading(false);
+                      }
+                    }}
+                  >
+                    🎨 Create Character
+                  </button>
+
+                  <label
+                    style={{
+                      ...styles.authSecondaryButton,
+                      fontSize: "12px",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      background: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      color: "#475569",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    📤 Upload Character
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={handleProfilePictureUpload}
+                      disabled={authLoading}
+                    />
+                  </label>
                 </div>
               </div>
             </div>
