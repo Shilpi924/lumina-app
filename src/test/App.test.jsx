@@ -691,3 +691,21 @@ describe("Locate on Shelf Button Disability", () => {
     expect(isLocateButtonDisabled(5)).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// 22. UPLOAD PHOTO LABEL
+// ─────────────────────────────────────────────────────────────
+describe("Upload Photo Label", () => {
+  function getUploadLabel(disableEmojis = false) {
+    const eHelper = (emoji, text) => (disableEmojis ? text : `${emoji} ${text}`);
+    return eHelper("➕", "Upload Photo");
+  }
+
+  it("should return the emoji prefixed label by default", () => {
+    expect(getUploadLabel(false)).toBe("➕ Upload Photo");
+  });
+
+  it("should return plain text when emojis are disabled", () => {
+    expect(getUploadLabel(true)).toBe("Upload Photo");
+  });
+});

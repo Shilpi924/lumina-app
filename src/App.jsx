@@ -5508,6 +5508,26 @@ Important:
             onChange={(e) => handleImage(e.target.files[0])}
           />
         </label>
+
+        <label
+          className="btn-press"
+          style={{
+            ...styles.uploadPhotoButton,
+            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+            margin: 0,
+          }}
+          onClick={() => { setCameraIdle(false); }}
+        >
+          {e("➕", "Upload Photo")}
+          <input
+            type="file"
+            accept="image/*"
+            hidden
+            disabled={isOffline}
+            onChange={(e) => handleImage(e.target.files[0])}
+          />
+        </label>
+
         <button
           type="button"
           style={{
@@ -6976,6 +6996,22 @@ const styles = {
     border: "1px solid #2563eb",
     cursor: "pointer",
     fontWeight: "650",
+  },
+  uploadPhotoButton: {
+    flex: "1 1 min(100%, 150px)",
+    minWidth: 0,
+    textAlign: "center",
+    background: "#ffffff",
+    color: "#2563eb",
+    padding: "12px 20px",
+    borderRadius: "8px",
+    border: "1.5px dashed #2563eb",
+    cursor: "pointer",
+    fontWeight: "650",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
   },
   scanButtonNeedsAuth: {
     opacity: 0.78,
