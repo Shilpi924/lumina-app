@@ -1,7 +1,7 @@
 {
-  "name": "scanner-app",
+  "name": "bookcompass",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.19",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,19 +15,25 @@
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.3.0",
+    "@capacitor-mlkit/barcode-scanning": "^8.1.0",
     "@capacitor/android": "^8.3.4",
     "@capacitor/app": "^8.1.0",
     "@capacitor/camera": "^8.2.0",
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
+    "@capacitor/filesystem": "^8.1.2",
     "@google/genai": "^2.6.0",
+    "@revenuecat/purchases-capacitor": "^13.2.0",
     "firebase": "^12.14.0",
+    "localforage": "^1.10.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",

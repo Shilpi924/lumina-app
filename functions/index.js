@@ -6,6 +6,7 @@ admin.initializeApp();
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
+const googleBooksApiKey = defineSecret('GOOGLE_BOOKS_API_KEY');
 const claudeModel = defineString('CLAUDE_MODEL', {
   default: 'claude-sonnet-4-5',
 });
@@ -135,7 +136,7 @@ function shouldUseClaudeFallback(status, result) {
 }
 
 
-function toAnthropicContent(contents) {
+function toAnthropicContent(contents, callType) {
   const contentBlocks = [];
 
   for (const content of contents || []) {
@@ -156,7 +157,7 @@ function toAnthropicContent(contents) {
     }
   }
 
-  if (contentBlocks.some((block) => block.type === 'text')) {
+  if (contentBlocks.some((block) => block.type === 'text') && callType !== 'Chat') {
     contentBlocks.push({
       type: 'text',
       text: 'Return raw JSON only. Do not wrap the response in Markdown or code fences.',
@@ -201,7 +202,7 @@ function normalizeClaudeResult(result, model) {
   };
 }
 
-async function saveGlobalUsage({ auth, callType, status, result, provider, model, ipAddress }) {
+async function saveGlobalUsage({ auth, callType, status, result, provider, model, ipAddress, durationMs }) {
   if (!auth?.uid) return;
 
   const db = admin.firestore();
@@ -220,6 +221,7 @@ async function saveGlobalUsage({ auth, callType, status, result, provider, model
     promptTokens,
     outputTokens,
     totalTokens,
+    durationMs: durationMs || 0,
     userId: auth.uid,
     userEmail,
     ipAddress: ipAddress || 'Unknown IP',
@@ -243,6 +245,7 @@ async function saveGlobalUsage({ auth, callType, status, result, provider, model
         lastModel: model,
         lastUserEmail: userEmail,
         lastIpAddress: ipAddress || 'Unknown IP',
+        lastDurationMs: durationMs || 0,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -296,7 +299,7 @@ async function callClaude({ contents, generationConfig }) {
       messages: [
         {
           role: 'user',
-          content: toAnthropicContent(contents),
+          content: toAnthropicContent(contents, generationConfig?._callType),
         },
       ],
     }),
@@ -325,14 +328,16 @@ export const generateGeminiContent = onCall(
     secrets: [geminiApiKey, anthropicApiKey],
     timeoutSeconds: 120,
     memory: '512MiB',
+    minInstances: 1,
   },
   async (request) => {
-    if (!request.auth?.uid) {
+    const { contents, generationConfig = {}, callType = 'AI call' } = request.data || {};
+
+    if (!request.auth?.uid && callType !== 'Chat') {
       throw new HttpsError('unauthenticated', 'Sign in to use AI scanning.');
     }
 
-    const { contents, generationConfig = {}, callType = 'AI call' } =
-      request.data || {};
+
     const ipAddress = getRequestIp(request);
 
     if (!Array.isArray(contents) || contents.length === 0) {
@@ -344,7 +349,9 @@ export const generateGeminiContent = onCall(
 
     if (!quotaAlreadyExhausted) {
       // ── Step 2: Try Gemini first ─────────────────────────────────────────
+      const geminiStartTime = Date.now();
       const gemini = await callGemini({ contents, generationConfig });
+      const geminiDurationMs = Date.now() - geminiStartTime;
 
       if (gemini.ok) {
         await recordUsageSafely({
@@ -355,12 +362,14 @@ export const generateGeminiContent = onCall(
           provider: 'gemini',
           model: GEMINI_MODEL,
           ipAddress,
+          durationMs: geminiDurationMs,
         });
         return { ...gemini.result, provider: 'gemini', model: GEMINI_MODEL };
       }
 
       // ── Step 3: Gemini failed — record it, fall through to Claude ────────
       const failReason = isQuotaError(gemini.status, gemini.result) ? 'quota' : 'error';
+      console.warn(`Gemini failed (${failReason}). Status: ${gemini.status}. Result: ${JSON.stringify(gemini.result)}`);
       await recordUsageSafely({
         auth: request.auth,
         callType,
@@ -369,6 +378,7 @@ export const generateGeminiContent = onCall(
         provider: 'gemini',
         model: GEMINI_MODEL,
         ipAddress,
+        durationMs: geminiDurationMs,
       });
 
       // If this was a quota error, flag it so all subsequent calls today skip Gemini
@@ -383,7 +393,9 @@ export const generateGeminiContent = onCall(
     }
 
     // ── Step 4: Call Claude (fallback or direct) ─────────────────────────────
-    const claude = await callClaude({ contents, generationConfig });
+    const claudeStartTime = Date.now();
+    const claude = await callClaude({ contents, generationConfig: { ...generationConfig, _callType: callType } });
+    const claudeDurationMs = Date.now() - claudeStartTime;
 
     if (!claude.ok) {
       await recordUsageSafely({
@@ -394,6 +406,7 @@ export const generateGeminiContent = onCall(
         provider: 'claude',
         model: claude.model || claudeModel.value(),
         ipAddress,
+        durationMs: claudeDurationMs,
       });
       throw new HttpsError(
         getProviderErrorCode(claude.status),
@@ -409,9 +422,43 @@ export const generateGeminiContent = onCall(
       provider: 'claude',
       model: claude.model,
       ipAddress,
+      durationMs: claudeDurationMs,
     });
 
     const routeReason = quotaAlreadyExhausted ? 'gemini-quota-daily-skip' : 'gemini-failed-fallback';
     return { ...claude.result, fallbackFrom: routeReason };
+  }
+);
+
+export const searchGoogleBooks = onCall(
+  {
+    region: 'us-central1',
+    invoker: 'public',
+    secrets: [googleBooksApiKey],
+    timeoutSeconds: 30,
+    memory: '256MiB',
+  },
+  async (request) => {
+    const { params } = request.data || {};
+    if (!params) {
+      throw new HttpsError('invalid-argument', 'Search parameters are required.');
+    }
+
+    const apiKey = googleBooksApiKey.value();
+    if (!apiKey) {
+      throw new HttpsError('failed-precondition', 'Google Books API key is not configured.');
+    }
+
+    const searchParams = new URLSearchParams(params);
+    searchParams.set('key', apiKey); // Inject secret key
+
+    const url = `https://www.googleapis.com/books/v1/volumes?${searchParams.toString()}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new HttpsError('internal', `Google Books API error: ${response.status}`);
+    }
+    
+    return await response.json();
   }
 );

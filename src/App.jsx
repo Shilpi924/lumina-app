@@ -1,11 +1,54 @@
+import {
+  getTimeGreeting,
+  sanitizeDisplayName,
+  getDisplayTime,
+  getTimestamp,
+  cleanJsonText,
+  safeParseJson,
+  normalizeBookText,
+  getUserDisplayName,
+  getFirstName,
+  getTodayKey,
+  getBookKey,
+  getSavedFileKey,
+} from "./utils/stringUtils";
+import {
+  APP_STATE_DOC,
+  API_USAGE_COLLECTION,
+  getUserAppStateRef,
+  saveUserAppState,
+  saveUserScan,
+  getDeveloperUsageRef,
+  recordSuccessfulLogin,
+} from "./services/firebaseService";
+import {
+  getPromptTokenCount,
+  getTotalTokenCount,
+  getGeminiText,
+  generateGeminiContent,
+  getFriendlyScanError,
+} from "./services/geminiService";
+import { useDeveloper, hasDeveloperAccess } from "./hooks/useDeveloper";
+import { useAuth } from "./hooks/useAuth";
+import { useLibrary } from "./hooks/useLibrary";
+import { useAppUI, SECTION_DEFAULT_OPEN } from "./hooks/useAppUI";
+import { useScan } from "./hooks/useScan";
+import {
+  isValidEmail,
+  validatePassword,
+  validateDisplayName,
+  BLOCKED_NAME_TERMS
+} from "./utils/validationUtils";
 import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import {
   createUserWithEmailAndPassword,
   getRedirectResult,
   GoogleAuthProvider,
+  OAuthProvider,
   onAuthStateChanged,
   reload,
   sendEmailVerification,
@@ -43,6 +86,11 @@ import {
   isFirebaseConfigured,
   logEvent,
 } from "./firebase";
+import ChatBox from "./components/ChatBox";
+import { Purchases, LOG_LEVEL } from "@revenuecat/purchases-capacitor";
+import localforage from "localforage";
+import { BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
+const IS_BETA_MODE = true;
 
 const googleBooksApiKey = import.meta.env.GOOGLE_BOOKS_API_KEY;
 const firebaseProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || "lumina-kaboom";
@@ -51,7 +99,9 @@ const firebaseAuthConsoleUrl = `https://console.firebase.google.com/project/${fi
 const isNativeApp = Capacitor.isNativePlatform();
 const isAndroidApp = Capacitor.getPlatform() === "android";
 const NativeSpeech = registerPlugin("NativeSpeech");
+const LuminaPurchases = registerPlugin("LuminaPurchases");
 const hasNativeFirebaseAuthentication = Capacitor.isPluginAvailable("FirebaseAuthentication");
+const hasNativePurchases = Capacitor.isPluginAvailable("LuminaPurchases");
 const isAndroidGoogleSsoConfigured =
   import.meta.env.VITE_ANDROID_GOOGLE_SSO_READY === "true";
 const isGeminiConfigured = isFirebaseConfigured;
@@ -60,57 +110,98 @@ const GOOGLE_BOOKS_PREVIEW_TIMEOUT_MS = 10000;
 const GOOGLE_BOOKS_PREVIEW_STALE_MS = GOOGLE_BOOKS_PREVIEW_TIMEOUT_MS + 3000;
 const ONE_MINUTE_MS = 60 * 1000;
 const DEFAULT_FILTERS = {
+  vibe: "",
   genre: "",
-  gradeBand: "",
-  readingLevel: "",
-  ageRecommendation: "",
-  shelfPick: "",
   minRating: "",
+  readingLevel: "",
+  gradeBand: "",
+  ageRecommendation: "",
 };
 const FILTER_OPTIONS = {
-  gradeBand: ["K-3", "4-6", "7+"],
-  readingLevel: ["Easy", "Intermediate", "Advanced"],
-  ageRecommendation: ["Kids", "Young Readers", "Teen", "Adult", "All ages"],
-  shelfPick: [
-    "Top Rated",
-    "Hidden Gem",
-    "Beginner Friendly",
-    "Popular",
-    "Educational",
+  vibe: [
+    "Spicy 🌶️",
+    "Dark Academia 🕯️",
+    "Crying uncontrollably 😭",
+    "Enemies to lovers 💕",
+    "Cozy Reset ☕",
+    "Plot twist 🤯",
   ],
   minRating: ["3", "3.5", "4", "4.5"],
+  readingLevel: ["Easy", "Intermediate", "Advanced", "Young Adult", "Middle Grade", "Adult"],
+  gradeBand: ["K-3", "4-6", "7-9", "10-12", "Adult"],
+  ageRecommendation: ["All ages", "Ages 5+", "Ages 8+", "Ages 12+", "Ages 14+", "Ages 18+"],
 };
-const APP_STATE_DOC = "bookCompass";
-const API_USAGE_COLLECTION = "developerApiUsage";
-const MAX_DISPLAY_NAME_LENGTH = 24;
-const BLOCKED_NAME_TERMS = [
-  "admin",
-  "administrator",
-  "firebase",
-  "google",
-  "http",
-  "https",
-  "moderator",
-  "support",
-  "www",
+const VIBE_MOODS = ["Main character", "Cozy reset", "Academic chaos", "Dark romance", "Plot twist"];
+const VIBE_PERSONAS = [
+  {
+    label: "Soft Scholar",
+    match: "You collect comfort, cleverness, and books that look like they know a secret.",
+    prompt: "Post this when your shelf says: gentle brain, dramatic taste.",
+    insight: "Your shelf doesn't just hold books — it holds moods. You reach for stories the way others reach for a blanket. Intentional. A little selective. Quietly intense.",
+    blindspot: "You start books in three genres at once and somehow finish none of them before starting a fourth. It's a system.",
+    signal: "People ask you for book recommendations because your taste is eerily accurate. You've never recommended something bad. Ever.",
+    confession: "You've definitely re-read the same comfort book this year already. No shame. That's the whole point.",
+  },
+  {
+    label: "Plot Twist Romantic",
+    match: "Your shelf wants yearning, sharp banter, and at least one emotional emergency.",
+    prompt: "Post this when your friends need to know your reading life is not calm.",
+    insight: "You read for the feeling. Not just the story — the specific, specific feeling. The slow burn. The almost-kiss that doesn't land until page 300. You know what you came for.",
+    blindspot: "You say you're 'fine' mid-book. You are not fine. There are emotions happening. Your face is telling on you.",
+    signal: "You've highlighted sentences that hit differently at 11pm. Your notes app has quotes that sound unhinged out of context.",
+    confession: "At least one book has made you put it down and stare at the ceiling. You gave it five stars and immediately recommended it to someone you wanted to emotionally wreck.",
+  },
+  {
+    label: "Library Main Character",
+    match: "You read like every aisle is a cinematic universe and every cover is a clue.",
+    prompt: "Post this when your bookshelf deserves its own close-up.",
+    insight: "Your shelf isn't a collection. It's a cast of characters. You remember where you bought each one, what mood you were in, what season it was. You live inside books differently.",
+    blindspot: "Your to-be-read pile is technically a second bookshelf. You've accepted this.",
+    signal: "You can smell a good book in a store. Something about the cover. The weight. The font on the spine. You just know.",
+    confession: "You've rearranged your shelf by color, then mood, then spine-out aesthetics, then regretted all of it. Currently in a compromise era.",
+  },
+  {
+    label: "Midnight Theorist",
+    match: "You read to understand things. People, patterns, the strange machinery of the world.",
+    prompt: "Post this when your shelf is basically a graduate program you designed yourself.",
+    insight: "You underline differently. Not for feeling — for thinking. Your margins are a second book. You return to chapters. You argue with authors in your head and sometimes win.",
+    blindspot: "You've started explaining a book at dinner and watched the table go quiet. You finished anyway. They were grateful, eventually.",
+    signal: "Your reading is research even when it isn't. Everything connects. You can't help it.",
+    confession: "You've recommended a book to someone and then been mildly offended they didn't finish it. You didn't say anything. But you noticed.",
+  },
+  {
+    label: "Chaotic Bookworm",
+    match: "You read whatever finds you. Genre is a suggestion. Mood is the only law.",
+    prompt: "Post this when your shelf defies categorization and you're proud of it.",
+    insight: "Your TBR pile is not a plan — it's a living thing. It grows. It shifts. You've bought books mid-book because the vibe called you elsewhere. This is not a flaw. This is your process.",
+    blindspot: "There are definitely books on your shelf you don't remember buying. You will not investigate. The mystery is part of it.",
+    signal: "You've recommended wildly different books to the same person at different times. Both were exactly right. Your instincts are weird and they work.",
+    confession: "You've DNF'd books that everyone loves and finished books that made no sense to anyone else. Your taste is a whole personality and you're leaning in.",
+  },
 ];
+
+const PLUS_PLANS = [
+  {
+    id: "lumina_plus_monthly",
+    name: "Lumina Plus",
+    price: "Free",
+    caption: "For readers who scan often and want prettier shares.",
+    perks: ["Higher scan limits", "Premium shelf reports", "Share cards", "Cloud library polish"],
+  },
+];
+
+const MAX_DISPLAY_NAME_LENGTH = 24;
+
 const DAILY_GUEST_SCAN_LIMIT = 12;
-const ANONYMOUS_SCAN_LIMIT = 10;
-const DAILY_USER_SCAN_LIMIT = 30;
-const DEVELOPER_EMAILS = ["shilpispin@gmail.com"];
-const DEFAULT_FOLDERS = ["Want to read", "For kids", "Gift ideas", "Favorites"];
+const ANONYMOUS_SCAN_LIMIT = 3;
+const DAILY_USER_SCAN_LIMIT = 10;
+
 const NO_PREVIEW_LABEL = "No preview";
 const HIDDEN_FOLDER_NAMES = new Set(["read aloud", "school"]);
 const NEW_FOLDER_OPTION = "__new_folder__";
 const MAX_LIBRARY_CARDS = 10;
 const MAX_LIBRARY_CARD_NAME_LENGTH = 36;
 const MAX_LIBRARY_CARD_NUMBER_LENGTH = 64;
-const SECTION_DEFAULT_OPEN = {
-  account: true,
-  libraryFolders: true,
-  savedBooks: true,
-  scanResults: true,
-};
 const CODE_128_PATTERNS = [
   "212222", "222122", "222221", "121223", "121322", "131222", "122213",
   "122312", "132212", "221213", "221312", "231212", "112232", "122132",
@@ -137,68 +228,20 @@ function normalizeFilters(filters) {
   };
 }
 
-export function getUserDisplayName(user) {
-  return sanitizeDisplayName(user?.displayName || user?.email?.split("@")[0]) || "Reader";
-}
 
-export function getFirstName(user) {
-  const name = getUserDisplayName(user);
-  return name.split(' ')[0] || "Reader";
-}
 
-function getTimeGreeting(date = new Date()) {
-  const hour = date.getHours();
 
-  if (hour < 12) return "Good Morning";
-  if (hour < 17) return "Good Afternoon";
-  if (hour < 22) return "Good Evening";
-  return "Good Night";
-}
 
-function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
 
-function hasDeveloperAccess(user) {
-  return DEVELOPER_EMAILS.includes(String(user?.email || "").toLowerCase());
-}
+
 
 function isSyncUser(user) {
   return Boolean(user?.uid && !user.isAnonymous);
 }
 
-function sanitizeDisplayName(name) {
-  return String(name || "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, MAX_DISPLAY_NAME_LENGTH);
-}
 
-function validatePassword(password) {
-  if (password.length < 8) return "Password must be at least 8 characters.";
-  if (!/[A-Z]/.test(password)) return "Password must include an uppercase letter.";
-  if (!/[0-9]/.test(password)) return "Password must include a number.";
-  if (!/[^A-Za-z0-9]/.test(password)) return "Password must include a special character.";
 
-  return "";
-}
 
-function validateDisplayName(name) {
-  const sanitizedName = sanitizeDisplayName(name);
-  const normalizedName = normalizeBookText(sanitizedName);
-
-  if (!sanitizedName) return "Enter a display name.";
-  if (sanitizedName.length < 3) return "Display name must be at least 3 characters.";
-  if (!/^[a-zA-Z0-9 ]+$/.test(sanitizedName)) {
-    return "Use only letters, numbers, and spaces in your display name.";
-  }
-  if (BLOCKED_NAME_TERMS.some((term) => normalizedName.includes(term))) {
-    return "Choose a different display name.";
-  }
-
-  return "";
-}
 
 function getDailyScanUsageKey(user) {
   return `scanUsage:${user?.uid || "guest"}:${getTodayKey()}`;
@@ -237,78 +280,9 @@ function getScanLimitMessage(user) {
   return `Scan limit reached. ${user ? "" : "Continue with Google to keep scanning. "}Limit: ${scanLimit} scans.`;
 }
 
-function getUserAppStateRef(uid) {
-  if (!db || !uid) return null;
-  return doc(db, "users", uid, "appData", APP_STATE_DOC);
-}
 
-async function saveUserAppState(uid, appState) {
-  const appStateRef = getUserAppStateRef(uid);
-  if (!appStateRef) return;
 
-  await setDoc(
-    appStateRef,
-    {
-      ...appState,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
-}
 
-async function saveUserScan(uid, scanData) {
-  if (!db || !uid) return;
-
-  await addDoc(collection(db, "users", uid, "scans"), {
-    ...scanData,
-    createdAt: serverTimestamp(),
-  });
-}
-
-function getDeveloperUsageRef(dateKey = getTodayKey()) {
-  if (!db) return null;
-  return doc(db, API_USAGE_COLLECTION, dateKey);
-}
-
-async function recordSuccessfulLogin(user, method = "password") {
-  if (!db || !user?.uid) return;
-
-  const userRef = doc(db, "users", user.uid);
-  const now = serverTimestamp();
-
-  await setDoc(
-    userRef,
-    {
-      uid: user.uid,
-      email: user.email || "",
-      displayName: sanitizeDisplayName(getUserDisplayName(user)),
-      emailVerified: Boolean(user.emailVerified),
-      lastLoginAt: now,
-      loginCount: increment(1),
-      provider: method,
-    },
-    { merge: true }
-  );
-
-  await addDoc(collection(db, "loginEvents"), {
-    userId: user.uid,
-    email: user.email || "",
-    displayName: sanitizeDisplayName(getUserDisplayName(user)),
-    method,
-    date: getTodayKey(),
-    createdAtMs: Date.now(),
-    createdAt: now,
-  });
-}
-
-function getTodayKey() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
 
 function getDefaultGeminiUsage() {
   return {
@@ -379,15 +353,7 @@ function mergeGeminiUsage(cloudUsage, localUsage) {
   };
 }
 
-function getDisplayTime(isoDate) {
-  if (!isoDate) return "";
 
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(isoDate));
-}
 
 function getRecentEvents(events, now = Date.now()) {
   return (events || []).filter((event) => {
@@ -396,82 +362,6 @@ function getRecentEvents(events, now = Date.now()) {
   });
 }
 
-function getPromptTokenCount(result) {
-  return Number(result?.usageMetadata?.promptTokenCount || 0);
-}
-
-function getTotalTokenCount(result) {
-  return Number(
-    result?.usageMetadata?.totalTokenCount ||
-      result?.usageMetadata?.promptTokenCount ||
-      0
-  );
-}
-
-function getGeminiText(result) {
-  return (
-    result?.text ||
-    result?.candidates?.[0]?.content?.parts?.[0]?.text ||
-    ""
-  );
-}
-
-async function generateGeminiContent(contents, generationConfig = {}, callType = "Gemini call") {
-  if (!cloudFunctions) {
-    throw new Error("Firebase Functions is not configured.");
-  }
-
-  const callable = httpsCallable(cloudFunctions, "generateGeminiContent");
-  const response = await callable({ contents, generationConfig, callType });
-
-  return response.data;
-}
-
-function getFriendlyScanError(error) {
-  const code = String(error?.code || "").toLowerCase();
-  const details = String(error?.details?.message || error?.details || "");
-  const message = String(error?.message || details || "");
-  const lowerMessage = message.toLowerCase();
-
-  if (
-    lowerMessage.includes("high demand") ||
-    lowerMessage.includes("try again later") ||
-    lowerMessage.includes("temporarily unavailable") ||
-    code.includes("unavailable")
-  ) {
-    return "The scan AI is temporarily busy. Try again in a minute.";
-  }
-  if (lowerMessage.includes("failed to fetch")) {
-    return "Lumina could not reach the scan service. Check your connection and try again.";
-  }
-  if (lowerMessage.includes("api key") || lowerMessage.includes("key not valid")) {
-    return "Gemini is not configured on the server. Check the Firebase Function secret.";
-  }
-  if (
-    code.includes("admin-restricted-operation") ||
-    lowerMessage.includes("admin-restricted-operation") ||
-    lowerMessage.includes("operation is restricted")
-  ) {
-    return "Guest scanning needs Anonymous sign-in enabled in Firebase Authentication. Open Firebase Console > Authentication > Sign-in method, then enable Anonymous.";
-  }
-  if (lowerMessage.includes("quota") || lowerMessage.includes("rate limit") || code.includes("resource-exhausted")) {
-    return "Gemini quota or rate limit was reached. Lumina will try Claude fallback when Gemini reports quota exhaustion.";
-  }
-  if (lowerMessage.includes("too large")) {
-    return "That photo is too large. Try a smaller or cropped bookshelf photo.";
-  }
-  if (lowerMessage.includes("permission") || lowerMessage.includes("forbidden") || code.includes("failed-precondition")) {
-    return message || "Gemini rejected this request. Check that the API key allows the Gemini API.";
-  }
-  if (code.includes("internal") && lowerMessage === "internal") {
-    return "The scan service hit an internal error. Try again once; if it repeats, check Firebase Function logs.";
-  }
-
-  return message || "Could not scan the bookshelf. Try a clearer photo of book spines.";
-}
-function getTimestamp() {
-  return new Date().getTime();
-}
 
 const encodeFileToBase64 = (file) =>
   new Promise((resolve, reject) => {
@@ -481,7 +371,7 @@ const encodeFileToBase64 = (file) =>
     reader.onerror = reject;
   });
 
-const compressImage = (file, maxWidth = 1600, quality = 0.8) => {
+const compressImage = (file, maxWidth = 1024, quality = 0.8) => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.src = URL.createObjectURL(file);
@@ -515,31 +405,11 @@ const compressImage = (file, maxWidth = 1600, quality = 0.8) => {
   });
 };
 
-function cleanJsonText(text) {
-  const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
 
-  if (firstBrace !== -1 && lastBrace !== -1) {
-    return cleaned.substring(firstBrace, lastBrace + 1);
-  }
 
-  return cleaned;
-}
 
-function safeParseJson(text) {
-  try {
-    return JSON.parse(cleanJsonText(text));
-  } catch (err) {
-    console.error("Invalid JSON:", text);
-    console.error(err);
-    return null;
-  }
-}
 
-function getBookKey(book) {
-  return `${book?.title || ""}-${book?.author || ""}`.toLowerCase();
-}
+
 
 function mergeUniqueByKey(primary = [], secondary = [], getKey = (item) => item?.id) {
   const merged = [];
@@ -569,15 +439,7 @@ export function getFolderDisplayLabel(folderName) {
   return folderName;
 }
 
-function normalizeBookText(text) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\b(the|a|an)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+
 
 function hasAuthorMatch(book, item) {
   const expectedAuthor = normalizeBookText(book?.author);
@@ -839,9 +701,7 @@ function getSafeFileName(text) {
   return normalizeBookText(text).replace(/\s+/g, "-") || "book-preview";
 }
 
-function getSavedFileKey(bookTitle, type) {
-  return `${type}-${normalizeBookText(bookTitle)}`;
-}
+
 
 function readStoredJson(key, fallbackValue) {
   try {
@@ -854,9 +714,11 @@ function readStoredJson(key, fallbackValue) {
 
 function writeStoredJson(key, value) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localforage.setItem(key, value).catch(err => {
+      console.error(`Could not write ${key} to localforage:`, err);
+    });
   } catch (err) {
-    console.error(`Could not write ${key} to local storage:`, err);
+    console.error(`Could not write ${key}:`, err);
   }
 }
 
@@ -1219,8 +1081,19 @@ function getBookSearchText(book) {
 }
 
 function getSearchIntent(searchText) {
-  const rawSearch = String(searchText || "").toLowerCase();
-  const normalized = normalizeBookText(searchText);
+  const numberWords = {
+    zero: "0", one: "1", two: "2", three: "3", four: "4",
+    five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10"
+  };
+  let rawSearch = String(searchText || "").toLowerCase();
+  
+  // Convert word numbers to digits so voice search works correctly
+  Object.entries(numberWords).forEach(([word, digit]) => {
+    const regex = new RegExp(`\\b${word}\\b`, 'g');
+    rawSearch = rawSearch.replace(regex, digit);
+  });
+
+  const normalized = normalizeBookText(rawSearch);
   const minRatingMatch = rawSearch.match(
     /\b(?:rating|rated|stars?)?\s*(?:above|over|at least|more than|greater than)\s*(\d(?:\.\d)?)\b/
   );
@@ -1413,30 +1286,18 @@ function getContentGuidance(book) {
 
 function matchesStructuredFilters(book, filters) {
   const genre = normalizeBookText(filters.genre);
-  const gradeBand = normalizeBookText(filters.gradeBand);
-  const readingLevel = normalizeBookText(filters.readingLevel);
-  const ageRecommendation = normalizeBookText(filters.ageRecommendation);
-  const shelfPick = normalizeBookText(filters.shelfPick);
+  const vibe = normalizeBookText(filters.vibe);
   const minRating = Number(filters.minRating || 0);
+  const readingLevel = normalizeBookText(filters.readingLevel);
+  const gradeBand = normalizeBookText(filters.gradeBand);
+  const ageRecommendation = normalizeBookText(filters.ageRecommendation);
 
   if (genre && !normalizeBookText(book?.genre).includes(genre)) return false;
-  if (gradeBand && normalizeBookText(book?.gradeBand) !== gradeBand) return false;
-  if (
-    readingLevel &&
-    !normalizeBookText(book?.readingLevel).includes(readingLevel)
-  ) {
-    return false;
-  }
-  if (
-    ageRecommendation &&
-    !normalizeBookText(book?.ageRecommendation).includes(ageRecommendation)
-  ) {
-    return false;
-  }
-  if (shelfPick && !normalizeBookText(book?.shelfPick).includes(shelfPick)) {
-    return false;
-  }
+  if (vibe && !normalizeBookText(book?.description).includes(vibe) && !normalizeBookText(book?.genre).includes(vibe)) return false;
   if (minRating && Number(book?.rating || 0) < minRating) return false;
+  if (readingLevel && !normalizeBookText(book?.readingLevel).includes(readingLevel)) return false;
+  if (gradeBand && !normalizeBookText(book?.gradeBand).includes(gradeBand)) return false;
+  if (ageRecommendation && !normalizeBookText(book?.ageRecommendation).includes(ageRecommendation)) return false;
 
   return true;
 }
@@ -1470,6 +1331,12 @@ export {
   validatePassword,
 };
 /* eslint-enable react-refresh/only-export-components */
+
+const AppleIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "12px" }}>
+    <path d="M16.35 11.23c0-3.32 2.71-4.91 2.83-4.98-1.55-2.26-3.95-2.57-4.81-2.61-2.04-.2-4 1.2-5.04 1.2-1.03 0-2.64-1.18-4.32-1.15-2.21.03-4.25 1.29-5.38 3.25-2.3 4-1.4 10.32.74 13.41 1.05 1.52 2.3 3.23 3.94 3.17 1.58-.06 2.18-1.02 4.1-1.02 1.91 0 2.47 1.02 4.12.99 1.68-.03 2.76-1.55 3.8-3.07 1.2-1.74 1.69-3.42 1.72-3.51-.03-.02-3.3-1.26-3.32-5.08A5.4 5.4 0 0116.35 11.23zm-2.9-7.14c.85-1.03 1.43-2.47 1.27-3.9-.11.02-1.63.1-2.53.64-1.07.65-1.72 1.83-1.53 3.01 1.48.11 2.92-1.01 2.79-2.75z" fill="currentColor"/>
+  </svg>
+);
 
 const GoogleIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "12px" }}>
@@ -1599,7 +1466,7 @@ function getAvatarSvgContent({ bgColor, accentColor, accessory, eyeSize, mouth, 
 }
 
 const THEMES = [
-  { id: "classic-blue", name: "Classic Blue", emoji: "🔵" },
+  { id: "classic-blue", name: "Default", emoji: "◐" },
   { id: "dark", name: "Dark Mode", emoji: "🌙" },
   { id: "sunset", name: "Sunset Orange", emoji: "🍊" },
   { id: "forest", name: "Forest Green", emoji: "🌲" },
@@ -1608,8 +1475,9 @@ const THEMES = [
 ];
 
 export default function App() {
-  const [appTheme, setAppTheme] = useState(() => readStoredJson("appTheme", "classic-blue"));
-  const [disableEmojis, setDisableEmojis] = useState(() => readStoredJson("disableEmojis", false));
+  const [isStoreLoaded, setIsStoreLoaded] = useState(false);
+  const [appTheme, setAppTheme] = useState("classic-blue");
+  const [disableEmojis, setDisableEmojis] = useState(false);
   const e = (emoji, text = "") => {
     if (disableEmojis) return text;
     return text ? `${emoji} ${text}` : emoji;
@@ -1631,97 +1499,137 @@ export default function App() {
   const [imagePreview, setImagePreview] = useState(null);
   const [shelfPhotoHistory, setShelfPhotoHistory] = useState([]);
   const [books, setBooks] = useState([]);
-  const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState(() => normalizeFilters(DEFAULT_FILTERS));
+  const [search, setSearch] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("q") || "";
+    } catch { return ""; }
+  });
+  const [filters, setFilters] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = {
+        vibe: params.get("vibe") || "",
+        genre: params.get("genre") || "",
+        minRating: params.get("minRating") || "",
+      };
+      // Use URL params if any are set, otherwise fall back to default
+      const hasUrlFilters = Object.values(fromUrl).some(Boolean);
+      return normalizeFilters(hasUrlFilters ? fromUrl : DEFAULT_FILTERS);
+    } catch { return normalizeFilters(DEFAULT_FILTERS); }
+  });
+
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState("scan");
-  const [user, setUser] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
-  const [authMode, setAuthMode] = useState("signin");
-  const [authForm, setAuthForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-  });
-  const [authMessage, setAuthMessage] = useState("");
-  const [authLoading, setAuthLoading] = useState(false);
-  const [developerStats, setDeveloperStats] = useState({
-    totalLoginEvents: 0,
-    todayLoginEvents: 0,
-    recentUniqueUsers: 0,
-    registeredUsers: 0,
-    lastLoginEmail: "",
-    lastLoginMethod: "",
-    lastLoginAt: "",
-  });
-  const [developerUsage, setDeveloperUsage] = useState({
-    apiCalls: 0,
-    promptTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-    successCalls: 0,
-    failedCalls: 0,
-    lastCallType: "",
-    lastStatus: "",
-    lastProvider: "",
-    lastModel: "",
-    lastUserEmail: "",
-  });
-  const [developerIpUsage, setDeveloperIpUsage] = useState([]);
-  const [developerStatsStatus, setDeveloperStatsStatus] = useState(
-    isFirebaseConfigured ? "Loading Firebase stats..." : "Firebase is not configured yet."
-  );
-  const userDataLoadedRef = useRef(false);
+  const {
+    user,
+    authReady,
+    authMode,
+    setAuthMode,
+    authForm,
+    setAuthForm,
+    authMessage,
+    setAuthMessage,
+    authLoading,
+    handleAuthSubmit,
+    handleGoogleLogin,
+    handleAppleLogin,
+    handleForgotPassword,
+    handleResendVerification,
+    handleRefreshVerification,
+    handleSignOut,
+    userDataLoadedRef,
+  } = useAuth({ setCurrentPage });
+  const {
+    developerStats,
+    developerUsage,
+    developerIpUsage,
+    developerEvents,
+    developerStatsStatus,
+  } = useDeveloper(user);
 
-  const [readingList, setReadingList] = useState(() => {
-    return readStoredJson("readingList", []);
-  });
+
+
 
   const [selectedBook, setSelectedBook] = useState(null);
   const [similarBooksView, setSimilarBooksView] = useState(null);
-  const [similarBooksCache, setSimilarBooksCache] = useState({});
-  const [scanHistory, setScanHistory] = useState(() => {
-    return readStoredJson("scanHistory", []);
-  });
-  const [folders, setFolders] = useState(() => {
-    return readStoredJson("folders", DEFAULT_FOLDERS);
-  });
-  const [bookFolders, setBookFolders] = useState(() => {
-    return readStoredJson("bookFolders", {});
-  });
-  const [activeFolder, setActiveFolder] = useState("All");
-  const [folderModal, setFolderModal] = useState({
-    isOpen: false,
-    book: null,
-    name: "",
-  });
-  const [openShelfLocations, setOpenShelfLocations] = useState({});
-  const [compare, setCompare] = useState([]);
-  const [compareOpen, setCompareOpen] = useState(false);
+
+
+
   const [geminiUsage, setGeminiUsage] = useState(getInitialGeminiUsage);
   const [previewCache, setPreviewCache] = useState({});
-  const [previewModal, setPreviewModal] = useState(null);
+  const [similarBooksCache, setSimilarBooksCache] = useState({});
   const [selectedLibraryCard, setSelectedLibraryCard] = useState(null);
   const previewCacheRef = useRef({});
   const previewRequestId = useRef(0);
+  
+  const {
+    folderModal, setFolderModal,
+    tagModal, setTagModal,
+    openShelfLocations, setOpenShelfLocations,
+    compare, setCompare,
+    compareOpen, setCompareOpen,
+    previewModal, setPreviewModal,
+    manualBookForm, setManualBookForm,
+    manualBookModalOpen, setManualBookModalOpen,
+    betaUnlockPopupOpen, setBetaUnlockPopupOpen,
+    libraryCardLoginPromptOpen, setLibraryCardLoginPromptOpen,
+    scanLimitPromptOpen, setScanLimitPromptOpen,
+    openSections, setOpenSections,
+    discoverIndex, setDiscoverIndex,
+    swipeHistory, setSwipeHistory,
+    swipeDirection, setSwipeDirection,
+    selectedDiscoverFolder, setSelectedDiscoverFolder,
+    closeFolderModal,
+    closeTagModal,
+    openManualBookModal,
+    closeManualBookModal,
+    handleManualBookChange,
+    toggleSection,
+  } = useAppUI();
+  
+  const {
+    scanHistory, setScanHistory,
+    scanLimitModalState, setScanLimitModalState,
+    anonymousScanCount, setAnonymousScanCount,
+    isAnonymousPlus, setIsAnonymousPlus,
+    userScanCount, setUserScanCount,
+    isUserPlus, setIsUserPlus,
+    lastScanDate, setLastScanDate,
+    checkScanLimit,
+    incrementScanCount,
+    resetScanLimits
+  } = useScan({ db, user });
   const [saveStatus, setSaveStatus] = useState(null);
+
+  const {
+    readingList, setReadingList,
+    savedFiles, setSavedFiles,
+    folders, setFolders,
+    bookFolders, setBookFolders,
+    bookTags, setBookTags,
+    activeFolder, setActiveFolder,
+    activeTagFilter, setActiveTagFilter,
+    isBookInReadingList,
+    hasSavedPreview,
+    hasSavedDetails,
+    toggleReadingList,
+    assignBookFolder,
+    deleteFolder,
+    toggleBookTag,
+    saveLocalPreviewFile,
+  } = useLibrary({ setSaveStatus });
   const [idleBursts, setIdleBursts] = useState([]);
   const [savedArtActive, setSavedArtActive] = useState(false);
-  const [manualBookModalOpen, setManualBookModalOpen] = useState(false);
-  const [manualBookForm, setManualBookForm] = useState({
-    title: "",
-    author: "",
-    genre: "",
-    readingLevel: "Intermediate",
-    rating: "4.0",
-    summary: "",
-    whyRead: "",
-    shelfLocation: "",
-    shelfPick: "Popular",
-  });
+
+  const [fypBooks, setFypBooks] = useState([]);
+  const [fypLoading, setFypLoading] = useState(false);
+  const [fypError, setFypError] = useState("");
+
+
+
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("");
@@ -1729,12 +1637,8 @@ export default function App() {
   const recognitionRef = useRef(null);
   const filterSearchRef = useRef(null);
   const libraryCardScanInputRef = useRef(null);
-  const [savedFiles, setSavedFiles] = useState(() => {
-    return normalizeSavedFiles(readStoredJson("savedPreviewFiles", []));
-  });
-  const [libraryCards, setLibraryCards] = useState(() => {
-    return normalizeLibraryCards(readStoredJson("libraryCards", []));
-  });
+
+  const [libraryCards, setLibraryCards] = useState([]);
   const [libraryCardForm, setLibraryCardForm] = useState({
     name: "",
     cardNumber: "",
@@ -1742,15 +1646,20 @@ export default function App() {
     imageName: "",
   });
   const [libraryCardMessage, setLibraryCardMessage] = useState("");
-  const [libraryCardLoginPromptOpen, setLibraryCardLoginPromptOpen] =
-    useState(false);
-  const [scanLimitPromptOpen, setScanLimitPromptOpen] = useState(false);
+
+
   const [cameraIdle, setCameraIdle] = useState(false);
-  const [openSections, setOpenSections] = useState(() => ({
-    ...SECTION_DEFAULT_OPEN,
-    ...readStoredJson("openSections", {}),
-  }));
-  const savedFileIdsRef = useRef(new Set(savedFiles.map((file) => file.id)));
+  const [vibeMood, setVibeMood] = useState(VIBE_MOODS[0]);
+  const [selectedPlusPlan, setSelectedPlusPlan] = useState(PLUS_PLANS[0].id);
+  const [vibeStatus, setVibeStatus] = useState("");
+  const [vibeAiResult, setVibeAiResult] = useState(null);
+  const [vibeAiLoading, setVibeAiLoading] = useState("");
+  const [vibeAiPreviews, setVibeAiPreviews] = useState({});
+  const vibePhotoInputRef = useRef(null);
+  const vibeAiCacheRef = useRef({});
+  const [referralShares, setReferralShares] = useState(0);
+
+
   const localUserStateRef = useRef({
     readingList,
     savedFiles,
@@ -1802,6 +1711,66 @@ export default function App() {
     manualBookModalOpen,
     scanLimitPromptOpen
   ]);
+
+  useEffect(() => {
+    async function initStorage() {
+      const isMigrated = await localforage.getItem("isMigratedToForage");
+      if (!isMigrated) {
+        for (const key of ["readingList", "savedPreviewFiles", "scanHistory", "folders", "bookFolders", "bookTags", "appTheme", "disableEmojis", "luminaAnonymousScanCount", "luminaIsPlusActive", "libraryCards"]) {
+          const val = localStorage.getItem(key);
+          if (val !== null) {
+            try {
+              await localforage.setItem(key, JSON.parse(val));
+            } catch (e) {
+              await localforage.setItem(key, val);
+            }
+          }
+        }
+        await localforage.setItem("isMigratedToForage", true);
+      }
+
+      const [
+         rl, svf, sh, fldr, bfldr, btgs, 
+         appT, disE, anonCount, anonPlus, lc, storedLastDate, storedUserPlus
+      ] = await Promise.all([
+         localforage.getItem("readingList"),
+         localforage.getItem("savedPreviewFiles"),
+         localforage.getItem("scanHistory"),
+         localforage.getItem("folders"),
+         localforage.getItem("bookFolders"),
+         localforage.getItem("bookTags"),
+         localforage.getItem("appTheme"),
+         localforage.getItem("disableEmojis"),
+         localforage.getItem("luminaAnonymousScanCount"),
+         localforage.getItem("luminaIsPlusActive"),
+         localforage.getItem("libraryCards"),
+         localforage.getItem("luminaLastScanDate"),
+         localforage.getItem("luminaIsUserPlusActive"),
+      ]);
+      
+      if (rl) setReadingList(rl);
+      if (svf) setSavedFiles(normalizeSavedFiles(svf));
+      if (sh) setScanHistory(sh);
+      if (fldr) setFolders(fldr);
+      if (bfldr) setBookFolders(bfldr);
+      if (btgs) setBookTags(btgs);
+      if (appT) setAppTheme(appT);
+      if (disE !== null) setDisableEmojis(disE);
+      if (anonCount !== null) setAnonymousScanCount(anonCount);
+      if (anonPlus !== null) setIsAnonymousPlus(anonPlus);
+      if (storedUserPlus === true) setIsUserPlus(true); // Restore Plus status immediately without waiting for Firestore
+      if (lc) setLibraryCards(normalizeLibraryCards(lc));
+      if (storedLastDate) setLastScanDate(storedLastDate);
+
+      setIsStoreLoaded(true);
+    }
+    initStorage();
+  }, []);
+
+  useEffect(() => {
+    writeStoredJson("luminaReferralShares", referralShares);
+  }, [referralShares]);
+
   useEffect(() => {
     logEvent(analytics, "app_opened");
   }, []);
@@ -1854,7 +1823,7 @@ export default function App() {
 
   useEffect(() => {
     writeStoredJson("savedPreviewFiles", savedFiles);
-    savedFileIdsRef.current = new Set(savedFiles.map((file) => file.id));
+
   }, [savedFiles]);
 
   useEffect(() => {
@@ -1864,6 +1833,20 @@ export default function App() {
   useEffect(() => {
     writeStoredJson("openSections", openSections);
   }, [openSections]);
+
+  // Sync search + filters to URL so the link is shareable
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams();
+      if (search.trim()) params.set("q", search.trim());
+      if (filters.vibe) params.set("vibe", filters.vibe);
+      if (filters.genre) params.set("genre", filters.genre);
+      if (filters.minRating) params.set("minRating", filters.minRating);
+      const qs = params.toString();
+      const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+      window.history.replaceState(null, "", newUrl);
+    } catch { /* ignore */ }
+  }, [search, filters]);
 
   // Camera idle pulse — starts 3s after landing on the scan page with nothing loaded
   useEffect(() => {
@@ -1892,18 +1875,36 @@ export default function App() {
   }, [bookFolders]);
 
   useEffect(() => {
+    writeStoredJson("bookTags", bookTags);
+  }, [bookTags]);
+
+  useEffect(() => {
     writeStoredJson("libraryCards", libraryCards);
   }, [libraryCards]);
 
   useEffect(() => {
-    if (compare.length === 2 && !compareOpen) {
-      setCompareOpen(true);
-    }
-
     if (compare.length < 2 && compareOpen) {
       setCompareOpen(false);
     }
-  }, [compare.length, compareOpen]);
+  }, [compare.length]);
+
+  useEffect(() => {
+    const initRevenueCat = async () => {
+      if (isNativeApp && !IS_BETA_MODE) {
+        try {
+          await Purchases.setLogLevel({ level: LOG_LEVEL.DEBUG });
+          if (isAndroidApp) {
+            await Purchases.configure({ apiKey: "test_nhJMYDdQJKSDFIFhVBzrtniTUJi" });
+          } else {
+            await Purchases.configure({ apiKey: "test_nhJMYDdQJKSDFIFhVBzrtniTUJi" });
+          }
+        } catch (e) {
+          console.error("Error initializing RevenueCat", e);
+        }
+      }
+    };
+    initRevenueCat();
+  }, []);
 
   useEffect(() => {
     if (!authLoading) return undefined;
@@ -1926,51 +1927,68 @@ export default function App() {
       scanHistory,
       folders,
       bookFolders,
+      bookTags,
       libraryCards,
     };
-  }, [readingList, savedFiles, filters, books, geminiUsage, scanHistory, folders, bookFolders, libraryCards]);
+  }, [readingList, savedFiles, filters, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards]);
 
   useEffect(() => {
-    if (!auth || !db) {
-      return undefined;
+    if (
+      selectedBook ||
+      previewModal ||
+      folderModal.isOpen ||
+      manualBookModalOpen ||
+      compareOpen ||
+      scanLimitPromptOpen ||
+      libraryCardLoginPromptOpen ||
+      avatarModalOpen ||
+      selectedLibraryCard ||
+      betaUnlockPopupOpen ||
+      scanLimitModalState
+    ) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
+  }, [
+    selectedBook,
+    previewModal,
+    folderModal.isOpen,
+    manualBookModalOpen,
+    compareOpen,
+    scanLimitPromptOpen,
+    libraryCardLoginPromptOpen,
+    avatarModalOpen,
+    selectedLibraryCard,
+    betaUnlockPopupOpen,
+    scanLimitModalState,
+  ]);
 
-    return onAuthStateChanged(auth, async (firebaseUser) => {
-      userDataLoadedRef.current = false;
+  useEffect(() => {
+    if (!user || user.isAnonymous) return;
+    if (userDataLoadedRef.current) return;
 
-      if (!firebaseUser) {
-        setUser(null);
-        setAuthReady(true);
-        return;
-      }
-      if (firebaseUser.isAnonymous) {
-        setUser(firebaseUser);
-        userDataLoadedRef.current = true;
-        setAuthReady(true);
-        return;
-      }
-      if (!firebaseUser.emailVerified) {
-        await signOut(auth);
-        setUser(null);
-        setAuthReady(true);
-        setAuthMode("signin");
-        setAuthMessage("Please verify your email before logging in.");
-        return;
-      }
-
-      const customPhotoURL = localStorage.getItem("profilePic_" + firebaseUser.uid);
-      setUser({ ...firebaseUser, customPhotoURL });
-      setAuthReady(true);
-
+    async function loadUserSyncData() {
       try {
+        const firebaseUser = user;
         const userRef = doc(db, "users", firebaseUser.uid);
         
         // Fetch existing customPhotoURL and disableEmojis from Firestore
         const userSnap = await getDoc(userRef);
         const userData = userSnap.exists() ? userSnap.data() : {};
         if (userData.customPhotoURL) {
-          localStorage.setItem("profilePic_" + firebaseUser.uid, userData.customPhotoURL);
+          await localforage.setItem("profilePic_" + firebaseUser.uid, userData.customPhotoURL);
           setUser((prev) => ({ ...prev, customPhotoURL: userData.customPhotoURL }));
+        }
+        
+        if (userData.scanCount !== undefined) {
+          setUserScanCount(userData.scanCount);
+        }
+        if (userData.lastScanDate) {
+          setLastScanDate(userData.lastScanDate);
+        }
+        if (userData.isPlusActive !== undefined) {
+          setIsUserPlus(userData.isPlusActive);
+          // Persist so Plus status is immediately available on next load
+          localforage.setItem("luminaIsUserPlusActive", userData.isPlusActive);
         }
 
         let mergedDisableEmojis = disableEmojis;
@@ -1999,10 +2017,23 @@ export default function App() {
           { merge: true }
         );
         const appStateRef = getUserAppStateRef(firebaseUser.uid);
-        const appStateSnapshot = appStateRef ? await getDoc(appStateRef) : null;
-        const cloudState = appStateSnapshot?.exists()
-          ? appStateSnapshot.data()
-          : null;
+        const readingListRef = doc(db, "users", firebaseUser.uid, "appData", `${APP_STATE_DOC}_readingList`);
+        const savedFilesRef = doc(db, "users", firebaseUser.uid, "appData", `${APP_STATE_DOC}_savedFiles`);
+        const scanHistoryRef = doc(db, "users", firebaseUser.uid, "appData", `${APP_STATE_DOC}_scanHistory`);
+
+        const [mainSnap, readingListSnap, savedFilesSnap, scanHistorySnap] = await Promise.all([
+          getDoc(appStateRef),
+          getDoc(readingListRef),
+          getDoc(savedFilesRef),
+          getDoc(scanHistoryRef)
+        ]);
+
+        const cloudState = mainSnap?.exists() ? mainSnap.data() : null;
+        if (cloudState) {
+          if (readingListSnap?.exists()) cloudState.readingList = readingListSnap.data().items || [];
+          if (savedFilesSnap?.exists()) cloudState.savedFiles = savedFilesSnap.data().items || [];
+          if (scanHistorySnap?.exists()) cloudState.scanHistory = scanHistorySnap.data().items || [];
+        }
 
         if (cloudState) {
           const localState = localUserStateRef.current;
@@ -2018,11 +2049,7 @@ export default function App() {
             normalizeSavedFiles(cloudState.savedFiles || []),
             (file) => file.id
           );
-          const mergedBooks = mergeUniqueByKey(
-            Array.isArray(localState.books) ? localState.books.map(enrichScannedBook) : [],
-            Array.isArray(cloudState.books) ? cloudState.books.map(enrichScannedBook) : [],
-            getBookKey
-          );
+
           const mergedScanHistory = mergeUniqueByKey(
             Array.isArray(localState.scanHistory) ? localState.scanHistory : [],
             Array.isArray(cloudState.scanHistory) ? cloudState.scanHistory : [],
@@ -2037,6 +2064,10 @@ export default function App() {
             ...(cloudState.bookFolders && typeof cloudState.bookFolders === "object" ? cloudState.bookFolders : {}),
             ...(localState.bookFolders && typeof localState.bookFolders === "object" ? localState.bookFolders : {}),
           };
+          const mergedBookTags = {
+            ...(cloudState.bookTags && typeof cloudState.bookTags === "object" ? cloudState.bookTags : {}),
+            ...(localState.bookTags && typeof localState.bookTags === "object" ? localState.bookTags : {}),
+          };
           const mergedLibraryCards = mergeUniqueByKey(
             normalizeLibraryCards(localState.libraryCards || []),
             normalizeLibraryCards(cloudState.libraryCards || []),
@@ -2049,6 +2080,7 @@ export default function App() {
           setScanHistory(mergedScanHistory);
           setFolders(mergedFolders.length ? mergedFolders : DEFAULT_FOLDERS);
           setBookFolders(mergedBookFolders);
+          setBookTags(mergedBookTags);
           setLibraryCards(mergedLibraryCards);
           setGeminiUsage(
             mergeGeminiUsage(
@@ -2065,35 +2097,10 @@ export default function App() {
         console.error("Could not load user app data:", err);
         userDataLoadedRef.current = true;
       }
-    });
-  }, []);
+    }
 
-  useEffect(() => {
-    if (!auth || !db) return undefined;
-
-    let isMounted = true;
-
-    getRedirectResult(auth)
-      .then(async (credential) => {
-        if (!credential?.user || !isMounted) return;
-
-        await recordSuccessfulLogin(credential.user, "google");
-        logEvent(analytics, "login", { method: "google-redirect" });
-        setAuthMessage("Signed in with Google.");
-        setCurrentPage("scan");
-      })
-      .catch((err) => {
-        console.error("Google redirect sign-in failed:", err);
-        if (isMounted) {
-          setAuthMessage(getAuthErrorMessage(err));
-          setCurrentPage("account");
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    loadUserSyncData();
+  }, [user]);
 
   useEffect(() => {
     if (!isSyncUser(user) || !userDataLoadedRef.current) {
@@ -2110,6 +2117,7 @@ export default function App() {
         scanHistory,
         folders,
         bookFolders,
+        bookTags,
         libraryCards,
       }).catch((err) => {
         console.error("Could not save user app data:", err);
@@ -2117,185 +2125,7 @@ export default function App() {
     }, 500);
 
     return () => window.clearTimeout(saveTimer);
-  }, [user, readingList, savedFiles, filters, books, geminiUsage, scanHistory, folders, bookFolders, libraryCards]);
-
-  useEffect(() => {
-    if (!db || !hasDeveloperAccess(user)) {
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    async function loadDeveloperStats() {
-      try {
-        const todayKey = getTodayKey();
-        const userCountSnapshot = await getCountFromServer(collection(db, "users"));
-        const totalLoginSnapshot = await getCountFromServer(collection(db, "loginEvents"));
-        const todayLoginQuery = query(
-          collection(db, "loginEvents"),
-          where("date", "==", todayKey)
-        );
-        const todayLoginSnapshot = await getCountFromServer(todayLoginQuery);
-        const recentLoginQuery = query(
-          collection(db, "loginEvents"),
-          orderBy("createdAtMs", "desc"),
-          limit(50)
-        );
-        const recentLoginSnapshot = await getDocs(recentLoginQuery);
-        const recentLogins = recentLoginSnapshot.docs.map((eventDoc) => eventDoc.data());
-        const lastLogin = recentLogins[0] || {};
-        const recentUniqueUsers = new Set(
-          recentLogins.map((loginEvent) => loginEvent.userId).filter(Boolean)
-        ).size;
-
-        const geminiSuccessSnapshot = await getCountFromServer(
-          query(collection(db, "developerApiUsageEvents"), where("provider", "==", "gemini"), where("isSuccess", "==", true))
-        );
-        const claudeSuccessSnapshot = await getCountFromServer(
-          query(collection(db, "developerApiUsageEvents"), where("provider", "==", "claude"), where("isSuccess", "==", true))
-        );
-        const totalCallsSnapshot = await getCountFromServer(collection(db, "developerApiUsageEvents"));
-
-        if (cancelled) return;
-
-        setDeveloperStats({
-          geminiSuccessCalls: geminiSuccessSnapshot.data().count || 0,
-          claudeSuccessCalls: claudeSuccessSnapshot.data().count || 0,
-          totalApiCalls: totalCallsSnapshot.data().count || 0,
-          totalLoginEvents: totalLoginSnapshot.data().count || 0,
-          todayLoginEvents: todayLoginSnapshot.data().count || 0,
-          recentUniqueUsers,
-          registeredUsers: userCountSnapshot.data().count || 0,
-          lastLoginEmail: lastLogin.email || "",
-          lastLoginMethod: lastLogin.method || "",
-          lastLoginAt: lastLogin.createdAtMs
-            ? new Date(lastLogin.createdAtMs).toISOString()
-            : "",
-        });
-        setDeveloperStatsStatus("");
-      } catch (err) {
-        console.error("Could not load developer stats:", err);
-        if (!cancelled) {
-          setDeveloperStatsStatus("Could not load Firebase developer stats.");
-        }
-      }
-    }
-
-    loadDeveloperStats();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!db || !hasDeveloperAccess(user)) {
-      return undefined;
-    }
-
-    const usageRef = getDeveloperUsageRef();
-    if (!usageRef) return undefined;
-
-    return onSnapshot(
-      usageRef,
-      (snapshot) => {
-        const data = snapshot.exists() ? snapshot.data() : {};
-        setDeveloperUsage({
-          apiCalls: Number(data.apiCalls || 0),
-          promptTokens: Number(data.promptTokens || 0),
-          outputTokens: Number(data.outputTokens || 0),
-          totalTokens: Number(data.totalTokens || 0),
-          successCalls: Number(data.successCalls || 0),
-          failedCalls: Number(data.failedCalls || 0),
-          lastCallType: data.lastCallType || "",
-          lastStatus: data.lastStatus || "",
-          lastProvider: data.lastProvider || "",
-          lastModel: data.lastModel || "",
-          lastUserEmail: data.lastUserEmail || "",
-        });
-      },
-      (err) => {
-        console.error("Could not load developer API usage:", err);
-      }
-    );
-  }, [user]);
-
-  useEffect(() => {
-    if (!db || !hasDeveloperAccess(user)) {
-      return undefined;
-    }
-
-    const todayEventsQuery = query(
-      collection(db, "developerApiUsageEvents"),
-      where("date", "==", getTodayKey())
-    );
-
-    return onSnapshot(
-      todayEventsQuery,
-      (snapshot) => {
-        const eventTotals = snapshot.docs.reduce(
-          (totals, eventDoc) => {
-            const eventData = eventDoc.data();
-            const promptTokens = Number(eventData.promptTokens || 0);
-            const totalTokens = Number(eventData.totalTokens || promptTokens);
-            const outputTokens = Number(
-              eventData.outputTokens ?? Math.max(0, totalTokens - promptTokens)
-            );
-
-            return {
-              apiCalls: totals.apiCalls + 1,
-              promptTokens: totals.promptTokens + promptTokens,
-              outputTokens: totals.outputTokens + outputTokens,
-              totalTokens: totals.totalTokens + totalTokens,
-              successCalls:
-                totals.successCalls + (eventData.status === "Success" ? 1 : 0),
-              failedCalls:
-                totals.failedCalls + (eventData.status === "Success" ? 0 : 1),
-            };
-          },
-          {
-            apiCalls: 0,
-            promptTokens: 0,
-            outputTokens: 0,
-            totalTokens: 0,
-            successCalls: 0,
-            failedCalls: 0,
-          }
-        );
-        const ipUsageByAddress = new Map();
-
-        snapshot.docs.forEach((eventDoc) => {
-          const eventData = eventDoc.data();
-          const ipAddress = eventData.ipAddress || "Unknown IP";
-          const totalTokens = Number(
-            eventData.totalTokens || eventData.promptTokens || 0
-          );
-          const currentUsage = ipUsageByAddress.get(ipAddress) || {
-            ipAddress,
-            apiCalls: 0,
-            totalTokens: 0,
-          };
-
-          currentUsage.apiCalls += 1;
-          currentUsage.totalTokens += totalTokens;
-          ipUsageByAddress.set(ipAddress, currentUsage);
-        });
-
-        setDeveloperUsage((currentUsage) => ({
-          ...currentUsage,
-          ...eventTotals,
-        }));
-        setDeveloperIpUsage(
-          [...ipUsageByAddress.values()]
-            .sort((a, b) => b.totalTokens - a.totalTokens)
-            .slice(0, 8)
-        );
-      },
-      (err) => {
-        console.error("Could not load developer API usage events:", err);
-      }
-    );
-  }, [user]);
+  }, [user, readingList, savedFiles, filters, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards]);
 
   useEffect(() => {
     previewCacheRef.current = previewCache;
@@ -2306,6 +2136,7 @@ export default function App() {
       recognitionRef.current?.abort();
     };
   }, []);
+
 
   function beginGeminiCall(callType) {
     const todayKey = getTodayKey();
@@ -2436,320 +2267,7 @@ export default function App() {
     return err?.message || "Authentication failed. Please try again.";
   }
 
-  async function handleAuthSubmit(event) {
-    event.preventDefault();
 
-    if (!auth || !db) {
-      setAuthMessage("Add your Firebase config and enable Authentication first.");
-      return;
-    }
-
-    const email = authForm.email.trim().toLowerCase();
-    const password = authForm.password;
-    const displayName = sanitizeDisplayName(authForm.name);
-
-    if (!email || !password) {
-      setAuthMessage("Enter your email and password.");
-      return;
-    }
-    if (!isValidEmail(email)) {
-      setAuthMessage("Enter a valid email address.");
-      return;
-    }
-    if (authMode === "signup") {
-      const nameError = validateDisplayName(displayName);
-      if (nameError) {
-        setAuthMessage(nameError);
-        return;
-      }
-      const passwordError = validatePassword(password);
-      if (passwordError) {
-        setAuthMessage(passwordError);
-        return;
-      }
-      if (password !== authForm.confirmPassword) {
-        setAuthMessage("Passwords do not match.");
-        return;
-      }
-    }
-
-    setAuthLoading(true);
-    setAuthMessage("");
-
-    try {
-      const credential =
-        authMode === "signup"
-          ? await createUserWithEmailAndPassword(auth, email, password)
-          : await signInWithEmailAndPassword(auth, email, password);
-
-      if (authMode === "signup") {
-        await updateProfile(credential.user, {
-          displayName,
-        });
-        await sendEmailVerification(credential.user);
-        await signOut(auth);
-        setUser(null);
-        setAuthMode("signin");
-        setAuthMessage("Verification email sent. Please verify your email, then log in.");
-        return;
-      }
-
-      if (!credential.user.emailVerified) {
-        await sendEmailVerification(credential.user);
-        await signOut(auth);
-        setUser(null);
-        setAuthMode("signin");
-        setAuthMessage("Your email is not verified. I sent a new verification email. Please verify, then log in.");
-        return;
-      }
-
-      await recordSuccessfulLogin(
-        {
-          ...credential.user,
-          displayName: displayName || credential.user.displayName,
-        },
-        "email"
-      );
-      logEvent(analytics, "login", {
-        method: "email",
-      });
-      setAuthMessage("Signed in. Your saved list and filters will sync here.");
-      setCurrentPage("scan");
-    } catch (err) {
-      console.error("Auth failed:", err);
-      setAuthMessage(getAuthErrorMessage(err));
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function handleGoogleLogin() {
-    if (!auth || !db) {
-      setAuthMessage("Add your Firebase config and enable Authentication first.");
-      return;
-    }
-
-    setAuthLoading(true);
-    setAuthMessage("");
-
-    if (isAndroidApp && !isAndroidGoogleSsoConfigured) {
-      setAuthLoading(false);
-      setAuthMessage(
-        "Google SSO needs the Android Firebase config. Add android/app/google-services.json, set VITE_ANDROID_GOOGLE_SSO_READY=true, rebuild, then try again."
-      );
-      return;
-    }
-
-    async function signInWithGoogleWeb() {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({
-        prompt: "select_account",
-      });
-      const credential = await signInWithPopup(auth, provider);
-      await recordSuccessfulLogin(credential.user, "google");
-      logEvent(analytics, "login", { method: "google" });
-      setAuthMessage("Signed in with Google.");
-      setCurrentPage("scan");
-    }
-
-    async function redirectToGoogleSignIn() {
-      setAuthMessage("Opening Google sign-in in this tab...");
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({
-        prompt: "select_account",
-      });
-      await signInWithRedirect(auth, provider);
-    }
-
-    try {
-      if (isNativeApp && hasNativeFirebaseAuthentication) {
-        const nativeResult = await FirebaseAuthentication.signInWithGoogle({
-          skipNativeAuth: true,
-        });
-        const idToken = nativeResult.credential?.idToken || null;
-        const accessToken = nativeResult.credential?.accessToken || undefined;
-
-        if (!idToken && !accessToken) {
-          throw new Error(
-            "Google sign-in did not return a Firebase credential. Check the Android Firebase client setup."
-          );
-        }
-
-        const googleCredential = GoogleAuthProvider.credential(idToken, accessToken);
-        const credential = await signInWithCredential(auth, googleCredential);
-
-        await recordSuccessfulLogin(credential.user, "google");
-        logEvent(analytics, "login", { method: "google-native" });
-        setAuthMessage("Signed in with Google.");
-        setCurrentPage("scan");
-        return;
-      }
-
-      if (!isNativeApp) {
-        await signInWithGoogleWeb();
-        return;
-      }
-
-      setAuthMessage(
-        "Google SSO must use native sign-in in the phone app. Add android/app/google-services.json, set VITE_ANDROID_GOOGLE_SSO_READY=true, rebuild, then try again."
-      );
-    } catch (err) {
-      console.error("Google sign-in failed:", err);
-      const code = err?.code || "";
-      const message = String(err?.message || "");
-      if (
-        message.includes("FirebaseAuthentication") &&
-        message.includes("not implemented")
-      ) {
-        if (isAndroidApp) {
-          setAuthMessage(
-            "Google SSO needs the Android Firebase config. Add android/app/google-services.json, set VITE_ANDROID_GOOGLE_SSO_READY=true, rebuild, then try again."
-          );
-          return;
-        }
-
-        try {
-          await signInWithGoogleWeb();
-          return;
-        } catch (fallbackErr) {
-          console.error("Google web fallback sign-in failed:", fallbackErr);
-          if (String(fallbackErr?.code || "").includes("popup")) {
-            await redirectToGoogleSignIn();
-            return;
-          }
-          setAuthMessage(getAuthErrorMessage(fallbackErr));
-          return;
-        }
-      }
-      if (
-        code.includes("popup-blocked") ||
-        code.includes("popup-closed-by-user") ||
-        code.includes("cancelled-popup-request") ||
-        code.includes("web-storage-unsupported")
-      ) {
-        if (isAndroidApp) {
-          setAuthMessage(
-            "Google SSO must use native Android sign-in. Add android/app/google-services.json, set VITE_ANDROID_GOOGLE_SSO_READY=true, rebuild, then try again."
-          );
-          return;
-        }
-
-        await redirectToGoogleSignIn();
-        return;
-      }
-
-      setAuthMessage(getAuthErrorMessage(err));
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function handleForgotPassword() {
-    if (!auth) {
-      setAuthMessage("Add your Firebase config and enable Authentication first.");
-      return;
-    }
-
-    const email = authForm.email.trim().toLowerCase();
-    if (!email) {
-      setAuthMessage("Enter your email first, then click Forgot password.");
-      return;
-    }
-    if (!isValidEmail(email)) {
-      setAuthMessage("Enter a valid email address for password reset.");
-      return;
-    }
-
-    setAuthLoading(true);
-    setAuthMessage("");
-
-    try {
-      await sendPasswordResetEmail(auth, email, {
-        url: window.location.origin,
-        handleCodeInApp: false,
-      });
-      setAuthMessage(
-        `Password reset email sent to ${email}. Check spam or promotions if it does not show up in a minute.`
-      );
-    } catch (err) {
-      console.error("Password reset failed:", err);
-      setAuthMessage(getAuthErrorMessage(err));
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function handleResendVerification() {
-    if (!user) {
-      setAuthMessage("Log in first, then request a verification email.");
-      return;
-    }
-    if (user.emailVerified) {
-      setAuthMessage("Your email is already verified.");
-      return;
-    }
-
-    setAuthLoading(true);
-    setAuthMessage("");
-
-    try {
-      await sendEmailVerification(user);
-      await signOut(auth);
-      setUser(null);
-      setAuthMode("signin");
-      setAuthMessage("Verification email sent. Please verify your email, then log in.");
-    } catch (err) {
-      console.error("Email verification failed:", err);
-      setAuthMessage(getAuthErrorMessage(err));
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function handleRefreshVerification() {
-    if (!auth?.currentUser) return;
-
-    setAuthLoading(true);
-    setAuthMessage("");
-
-    try {
-      await reload(auth.currentUser);
-      const refreshedUser = auth.currentUser;
-      setUser(refreshedUser);
-      if (refreshedUser?.uid && db) {
-        await setDoc(
-          doc(db, "users", refreshedUser.uid),
-          {
-            emailVerified: Boolean(refreshedUser.emailVerified),
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
-      setAuthMessage(
-        refreshedUser?.emailVerified
-          ? "Email verified. Thank you."
-          : "Email is not verified yet."
-      );
-    } catch (err) {
-      console.error("Refresh verification failed:", err);
-      setAuthMessage("Could not refresh verification status.");
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function handleSignOut() {
-    if (!auth) return;
-
-    try {
-      await signOut(auth);
-      setAuthMessage("Signed out. You can keep browsing as a guest.");
-    } catch (err) {
-      console.error("Sign out failed:", err);
-      setAuthMessage("Could not sign out. Please try again.");
-    }
-  }
 
   function updateLibraryCardForm(field, value) {
     setLibraryCardForm((currentForm) => ({
@@ -2924,9 +2442,67 @@ Do not include explanations.
     );
     setLibraryCardMessage("Library card removed.");
   }
+  async function handleBarcodeScan() {
+    try {
+      if (isOffline) {
+        setError("You must be online to scan barcodes.");
+        return;
+      }
+      if (!checkScanLimit()) return;
+      incrementScanCount();
+      
+      setLoading(true);
+      setLoadingStep(0);
+      setError("");
+
+      const { camera } = await BarcodeScanner.requestPermissions();
+      if (camera !== 'granted' && camera !== 'limited') {
+        setError("Camera permission is required to scan barcodes.");
+        setLoading(false);
+        return;
+      }
+
+      const result = await BarcodeScanner.scan();
+      
+      if (result.barcodes && result.barcodes.length > 0) {
+        const barcode = result.barcodes[0].displayValue;
+        
+        const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
+        const res = await searchGoogleBooks({ query: `isbn:${barcode}`, limit: 1 });
+        
+        if (res.data?.items && res.data.items.length > 0) {
+          const item = res.data.items[0];
+          const volumeInfo = item.volumeInfo;
+          
+          setManualBookForm({
+            title: volumeInfo.title || "",
+            author: volumeInfo.authors ? volumeInfo.authors.join(", ") : "",
+            genre: volumeInfo.categories ? volumeInfo.categories[0] : "",
+            readingLevel: "Intermediate",
+            rating: "4.0",
+            summary: volumeInfo.description || "",
+            whyRead: "Found via barcode scan",
+            shelfLocation: "Unsorted",
+            shelfPick: "Popular"
+          });
+          setManualBookModalOpen(true);
+        } else {
+          setError("No book found for ISBN " + barcode);
+        }
+      }
+    } catch (err) {
+      console.error("Barcode scan failed:", err);
+      setError("Failed to scan barcode: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
 
   async function handleImage(file) {
     if (!file) return;
+    if (!checkScanLimit()) return;
+    incrementScanCount();
     if (isOffline) {
       setError("You are offline. Scans are temporarily disabled.");
       return;
@@ -3270,158 +2846,15 @@ Important:
       .map(({ book }) => book);
   }, [books, selectedBook, selectedBookKey]);
 
-  function hasSavedPreview(book) {
-    return savedFiles.some(
-      (file) =>
-        file.type === "preview" &&
-        file.id === getSavedFileKey(book?.title, "preview")
-    );
-  }
 
-  function hasSavedDetails(book) {
-    return savedFiles.some(
-      (file) =>
-        file.type === "details" &&
-        file.id === getSavedFileKey(book?.title, "details")
-    );
-  }
 
-  function isBookInReadingList(book) {
-    const bookKey = getBookKey(book);
-    const inList = readingList.some(
-      (savedBook) => getBookKey(savedBook) === bookKey
-    );
-    const inFiles = savedFiles.some(
-      (file) => file.payload?.catalogBook && getBookKey(file.payload.catalogBook) === bookKey
-    );
-    return inList || inFiles;
-  }
 
-  function toggleReadingList(book) {
-    if (!book) return;
 
-    const exists = isBookInReadingList(book);
-    const bookKey = getBookKey(book);
 
-    setReadingList((currentList) =>
-      exists
-        ? currentList.filter((savedBook) => getBookKey(savedBook) !== bookKey)
-        : [{ ...book, savedAt: new Date().toISOString() }, ...currentList]
-    );
 
-    if (exists) {
-      const bookTitle = book.title;
-      const detailsKey = getSavedFileKey(bookTitle, "details");
-      const previewKey = getSavedFileKey(bookTitle, "preview");
-      setSavedFiles((currentFiles) =>
-        currentFiles.filter((file) => file.id !== detailsKey && file.id !== previewKey)
-      );
-    }
 
-    setBookFolders((currentFolders) => {
-      if (exists) {
-        const nextFolders = { ...currentFolders };
-        delete nextFolders[bookKey];
-        return nextFolders;
-      }
-      return { ...currentFolders, [bookKey]: currentFolders[bookKey] || "Want to read" };
-    });
 
-    setSaveStatus({
-      message: exists
-        ? `${book.title} removed from favorites.`
-        : `${book.title} added to favorites.`,
-      bookKey: getSavedFileKey(book.title, "favorite"),
-      type: "favorite",
-    });
-  }
 
-  function assignBookFolder(book, folderName) {
-    const bookKey = getBookKey(book);
-    if (!bookKey) return;
-
-    setBookFolders((currentFolders) => ({
-      ...currentFolders,
-      [bookKey]: folderName,
-    }));
-  }
-
-  function createFolderForBook(book) {
-    setFolderModal({
-      isOpen: true,
-      book: book || null,
-      name: "",
-    });
-  }
-
-  function createFolder() {
-    setFolderModal({
-      isOpen: true,
-      book: null,
-      name: "",
-    });
-  }
-
-  function deleteFolder(folderName) {
-    if (window.confirm(`Are you sure you want to delete the folder "${folderName}"? All books in it will be moved back to "Want to read".`)) {
-      setFolders((current) => current.filter((f) => f !== folderName));
-      if (activeFolder === folderName) {
-        setActiveFolder("All");
-      }
-      setBookFolders((current) => {
-        const updated = { ...current };
-        Object.keys(updated).forEach((key) => {
-          if (updated[key] === folderName) {
-            delete updated[key];
-          }
-        });
-        return updated;
-      });
-      setSaveStatus({
-        message: `Folder "${folderName}" was deleted.`,
-        bookKey: "folder",
-        type: "folder",
-      });
-    }
-  }
-
-  function deleteScanHistoryItem(scanId) {
-    if (window.confirm("Are you sure you want to delete this scan history record?")) {
-      setScanHistory((current) => current.filter((scan) => scan.id !== scanId));
-    }
-  }
-
-  function clearAllScanHistory() {
-    if (window.confirm("Are you sure you want to delete all scan history? This action cannot be undone.")) {
-      setScanHistory([]);
-    }
-  }
-
-  function openManualBookModal() {
-    setManualBookForm({
-      title: "",
-      author: "",
-      genre: "",
-      readingLevel: "Intermediate",
-      rating: "4.0",
-      summary: "",
-      whyRead: "",
-      shelfLocation: "",
-      shelfPick: "Popular",
-    });
-    setManualBookModalOpen(true);
-  }
-
-  function closeManualBookModal() {
-    setManualBookModalOpen(false);
-  }
-
-  function handleManualBookChange(fieldName, value) {
-    setManualBookForm((current) => ({
-      ...current,
-      [fieldName]: value,
-    }));
-  }
 
   function saveManualBook(event) {
     event.preventDefault();
@@ -3469,9 +2902,11 @@ Important:
     closeManualBookModal();
   }
 
-  function closeFolderModal() {
-    setFolderModal({ isOpen: false, book: null, name: "" });
-  }
+  const AVAILABLE_TAGS = ["🌶️", "😭", "✨", "🤯", "💀", "📖", "🎧"];
+
+
+
+
 
   function saveFolderFromModal(event) {
     event.preventDefault();
@@ -3506,6 +2941,14 @@ Important:
     closeFolderModal();
   }
 
+  function createFolder() {
+    setFolderModal({ isOpen: true, book: null, name: "" });
+  }
+
+  function createFolderForBook(book) {
+    setFolderModal({ isOpen: true, book: book, name: "" });
+  }
+
   function handleFolderSelect(book, folderName) {
     if (folderName === NEW_FOLDER_OPTION) {
       createFolderForBook(book);
@@ -3515,30 +2958,6 @@ Important:
     assignBookFolder(book, folderName);
   }
 
-  function handleSavedBookFolderSelect(savedBook, folderName) {
-    const book = savedBook?.catalogBook;
-    if (!book) return;
-
-    if (folderName === NEW_FOLDER_OPTION) {
-      createFolderForBook(book);
-      return;
-    }
-
-    const bookKey = getBookKey(book);
-    setReadingList((currentList) => {
-      if (currentList.some((saved) => getBookKey(saved) === bookKey)) {
-        return currentList;
-      }
-
-      return [{ ...book, savedAt: new Date().toISOString() }, ...currentList];
-    });
-    assignBookFolder(book, folderName);
-    setSaveStatus({
-      message: `${book.title} added to ${folderName}.`,
-      bookKey: getSavedFileKey(book.title, "favorite"),
-      type: "favorite",
-    });
-  }
 
   function getPreviewButtonState(book) {
     const cachedPreview = previewCache[getBookKey(book)];
@@ -3604,10 +3023,10 @@ Important:
   }
 
   function toggleCompare(book) {
-    const exists = compare.some((b) => b.title === book.title);
+    const exists = compare.some((b) => getBookKey(b) === getBookKey(book));
 
     if (exists) {
-      setCompare(compare.filter((b) => b.title !== book.title));
+      setCompare(compare.filter((b) => getBookKey(b) !== getBookKey(book)));
       return;
     }
 
@@ -3626,13 +3045,13 @@ Important:
     const bookKey = getBookKey(book);
     if (!bookKey) return;
 
-    if (!googleBooksApiKey) {
+    if (!isFirebaseConfigured || !cloudFunctions) {
       setSimilarBooksCache((currentCache) => ({
         ...currentCache,
         [bookKey]: {
           status: "error",
           message:
-            "Google Books API key is not configured, so global similar books cannot be loaded.",
+            "Backend is not configured, so global similar books cannot be loaded.",
           books: [],
         },
       }));
@@ -3649,24 +3068,19 @@ Important:
     }));
 
     try {
-      const params = new URLSearchParams({
-        q: getGoogleBooksSimilarQuery(book),
-        key: googleBooksApiKey,
-        maxResults: "30",
-        printType: "books",
-        orderBy: "relevance",
-        fields:
-          "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories,averageRating))",
+      const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
+      const response = await searchGoogleBooks({
+        params: {
+          q: getGoogleBooksSimilarQuery(book),
+          maxResults: "30",
+          printType: "books",
+          orderBy: "relevance",
+          fields:
+            "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories,averageRating))",
+        }
       });
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?${params}`
-      );
 
-      if (!response.ok) {
-        throw new Error("Google Books did not return recommendations right now.");
-      }
-
-      const data = await response.json();
+      const data = response.data;
       const seen = new Set([normalizeBookText(book.title)]);
       const recommendedBooks = (data.items || [])
         .map((item) => ({
@@ -3707,12 +3121,85 @@ Important:
     }
   }, []);
 
+  const loadFypRecommendations = useCallback(async () => {
+    if (!isFirebaseConfigured || !cloudFunctions || savedFiles.length === 0) {
+      setFypError("Save some books first to get FYP recommendations!");
+      return;
+    }
+    setFypLoading(true);
+    setFypError("");
+    try {
+      const validBooks = savedFiles.map(f => f.payload?.catalogBook).filter(Boolean);
+      if (validBooks.length === 0) {
+         setFypLoading(false);
+         setFypError("Save some books first to get FYP recommendations!");
+         return;
+      }
+      
+      const baseBook = validBooks[Math.floor(Math.random() * validBooks.length)];
+      const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
+      const response = await searchGoogleBooks({
+        params: {
+          q: getGoogleBooksSimilarQuery(baseBook),
+          maxResults: "40",
+          printType: "books",
+          orderBy: "relevance",
+          fields: "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories,averageRating))",
+        }
+      });
+      
+      const data = response.data;
+      const seen = new Set(validBooks.map(b => normalizeBookText(b.title)));
+      const recommendedBooks = (data.items || [])
+        .map((item) => ({
+          item,
+          score: scoreSimilarGoogleBook(baseBook, item),
+        }))
+        .filter(({ item, score }) => {
+          const titleKey = normalizeBookText(item?.volumeInfo?.title);
+          if (score <= 0 || !titleKey || seen.has(titleKey)) return false;
+          seen.add(titleKey);
+          return true;
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10)
+        .map(({ item }) => {
+          const book = mapGoogleBookToCatalogBook(item, baseBook);
+          const tags = [];
+          const genre = item?.volumeInfo?.categories?.[0] || "";
+          const desc = item?.volumeInfo?.description || "";
+          if (genre.toLowerCase().includes("romance") || desc.toLowerCase().includes("love")) tags.push("✨");
+          if (genre.toLowerCase().includes("thriller") || genre.toLowerCase().includes("horror")) tags.push("💀");
+          if (desc.toLowerCase().includes("drama") || desc.toLowerCase().includes("secret")) tags.push("☕️");
+          if (item?.volumeInfo?.averageRating >= 4.5) tags.push("🔥");
+          if (tags.length === 0) tags.push("📚");
+          book.emojiTags = tags;
+          return book;
+        });
+
+      setFypBooks(recommendedBooks);
+      setDiscoverIndex(0);
+      setSwipeHistory([]);
+    } catch (err) {
+      console.error("FYP recommendations failed:", err);
+      setFypError("Failed to load FYP recommendations.");
+    } finally {
+      setFypLoading(false);
+    }
+  }, [isFirebaseConfigured, cloudFunctions, savedFiles]);
+
+  useEffect(() => {
+    if (currentPage === "discover" && fypBooks.length === 0 && !fypLoading && !fypError) {
+      loadFypRecommendations();
+    }
+  }, [currentPage, fypBooks.length, fypLoading, fypError, loadFypRecommendations]);
+
   const findBookPreview = useCallback(async (book) => {
-    if (!googleBooksApiKey) {
+    if (!isFirebaseConfigured || !cloudFunctions) {
       return {
         status: "error",
         message:
-          "Google Books API key is not configured. Add GOOGLE_BOOKS_API_KEY to .env.local and restart the dev server.",
+          "Backend is not configured. Google Books preview cannot be loaded.",
       };
     }
 
@@ -3724,36 +3211,19 @@ Important:
       };
     }
 
-    let timeoutId;
-
     try {
-      const controller = new AbortController();
-      timeoutId = window.setTimeout(
-        () => controller.abort(),
-        GOOGLE_BOOKS_PREVIEW_TIMEOUT_MS
-      );
-      const params = new URLSearchParams({
-        q: query,
-        key: googleBooksApiKey,
-        maxResults: "20",
-        printType: "books",
-        fields:
-          "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories),accessInfo(embeddable,viewability,webReaderLink))",
+      const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
+      const response = await searchGoogleBooks({
+        params: {
+          q: query,
+          maxResults: "20",
+          printType: "books",
+          fields:
+            "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories),accessInfo(embeddable,viewability,webReaderLink))",
+        }
       });
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?${params}`,
-        { signal: controller.signal }
-      );
 
-      if (!response.ok) {
-        return {
-          status: "error",
-          message:
-            "Google Books did not return a preview right now. Please try again in a moment.",
-        };
-      }
-
-      const data = await response.json();
+      const data = response.data;
       const rankedBooks = (data.items || [])
         .map((item) => ({ item, score: scoreGoogleBooksMatch(book, item) }))
         .sort((a, b) => b.score - a.score);
@@ -3798,8 +3268,6 @@ Important:
         message:
           "Could not load the preview. Check your connection and try again.",
       };
-    } finally {
-      if (timeoutId) window.clearTimeout(timeoutId);
     }
   }, []);
 
@@ -3878,6 +3346,18 @@ Important:
     const requestId = previewRequestId.current + 1;
     previewRequestId.current = requestId;
 
+    const savedFile = savedFiles.find((f) => f.payload?.catalogBook && getBookKey(f.payload.catalogBook) === key);
+    if (savedFile?.payload?.preview) {
+      setPreviewModal({
+        book,
+        ...savedFile.payload.preview,
+        status: savedFile.payload.preview.status || "error",
+        message: savedFile.payload.preview.message || "",
+        source: "saved",
+      });
+      return;
+    }
+
     setPreviewModal({
       book,
       status: "loading",
@@ -3926,39 +3406,7 @@ Important:
     setPreviewModal(null);
   }
 
-  function saveLocalPreviewFile(fileName, payload, bookTitle, displayName, type) {
-    const savedAt = new Date().toISOString();
-    const savedKey = getSavedFileKey(bookTitle, type);
-    const savedFile = {
-      id: savedKey,
-      name: displayName || fileName,
-      bookTitle,
-      location: "This phone",
-      savedAt,
-      type,
-      payload,
-    };
-    const alreadySaved = savedFileIdsRef.current.has(savedKey);
 
-    if (alreadySaved) {
-      setSavedFiles((currentFiles) =>
-        currentFiles.map((file) =>
-          file.id === savedKey ? { ...file, ...savedFile } : file
-        )
-      );
-    } else {
-      savedFileIdsRef.current.add(savedKey);
-      setSavedFiles((currentFiles) => [savedFile, ...currentFiles]);
-    }
-
-    setSaveStatus({
-      message: alreadySaved
-        ? `Updated ${displayName || fileName} on this phone.`
-        : `Saved ${displayName || fileName} on this phone.`,
-      bookKey: savedKey,
-      type,
-    });
-  }
 
   function downloadPreviewDetails() {
     if (!previewModal?.book) return;
@@ -4076,8 +3524,29 @@ Important:
 
         <h3 style={{ ...styles.cardTitle, color: theme.title }}>{book.title}</h3>
 
-        <div style={styles.metaPillRow}>
-          <span style={styles.metaPill}>{confidence}</span>
+        {options.prefix !== "library" && options.prefix !== "saved-file" && (
+          <div style={styles.metaPillRow}>
+            <span style={styles.metaPill}>{confidence}</span>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", margin: "8px 0" }}>
+          {(bookTags[bookKey] || []).map(tag => (
+            <span key={tag} style={{ fontSize: "14px", padding: "2px 6px", background: "var(--card-bg)", border: "1px solid var(--border)", borderRadius: "12px" }}>
+              {tag}
+            </span>
+          ))}
+          {options.prefix === "library" && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setTagModal({ isOpen: true, bookKey });
+              }}
+              style={{ fontSize: "12px", padding: "2px 8px", background: "none", border: "1px dashed var(--border)", borderRadius: "12px", cursor: "pointer", color: "var(--text-l)" }}
+            >
+              + 🏷️
+            </button>
+          )}
         </div>
 
         {options.compact ? (
@@ -4110,9 +3579,40 @@ Important:
 
             <p>{book.summary}</p>
 
+            {options.prefix === "library" && (
+              <div style={{ marginTop: "12px", width: "100%" }}>
+                <select
+                  value={bookFolders[bookKey] || "Want to read"}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setBookFolders((prev) => ({
+                      ...prev,
+                      [bookKey]: e.target.value
+                    }));
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "6px",
+                    borderRadius: "6px",
+                    border: "1px solid var(--border)",
+                    background: "var(--bg)",
+                    fontSize: "13px",
+                    color: "var(--text)",
+                    outline: "none"
+                  }}
+                >
+                  {["Want to read", ...folders].map(f => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div style={styles.buttonRow}>
               {options.prefix === "saved-file" ? (
                 <>
+
                   {canOpenSavedBookPreview(options.savedBook) && (
                     <button
                       type="button"
@@ -4288,6 +3788,7 @@ Important:
           >
             ↑
           </button>
+
         </div>
 
         {voiceStatus && <p style={styles.voiceStatus}>{voiceStatus}</p>}
@@ -4301,83 +3802,31 @@ Important:
         {filtersOpen && <div style={styles.filterGrid}>
           <label style={styles.filterLabel}>
             <span>Genre</span>
-            <input
+            <select
               style={styles.filterControl}
-              list="genre-options"
-              value={filters.genre}
-              placeholder="Any genre"
+              value={filters.genre || ""}
               onChange={(event) => updateFilter("genre", event.target.value)}
-            />
-            <datalist id="genre-options">
+            >
+              <option value="">Any genre</option>
               {genreOptions.map((genre) => (
-                <option key={genre} value={genre} />
-              ))}
-            </datalist>
-          </label>
-
-          <label style={styles.filterLabel}>
-            <span>Grade</span>
-            <select
-              style={styles.filterControl}
-              value={filters.gradeBand}
-              onChange={(event) => updateFilter("gradeBand", event.target.value)}
-            >
-              <option value="">Any grade</option>
-              {FILTER_OPTIONS.gradeBand.map((gradeBand) => (
-                <option key={gradeBand} value={gradeBand}>
-                  {gradeBand}
+                <option key={genre} value={genre}>
+                  {genre}
                 </option>
               ))}
             </select>
           </label>
 
           <label style={styles.filterLabel}>
-            <span>Book Level</span>
+            <span>Vibe Check</span>
             <select
               style={styles.filterControl}
-              value={filters.readingLevel}
-              onChange={(event) =>
-                updateFilter("readingLevel", event.target.value)
-              }
+              value={filters.vibe || ""}
+              onChange={(event) => updateFilter("vibe", event.target.value)}
             >
-              <option value="">Any level</option>
-              {FILTER_OPTIONS.readingLevel.map((readingLevel) => (
-                <option key={readingLevel} value={readingLevel}>
-                  {readingLevel}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label style={styles.filterLabel}>
-            <span>Age</span>
-            <select
-              style={styles.filterControl}
-              value={filters.ageRecommendation}
-              onChange={(event) =>
-                updateFilter("ageRecommendation", event.target.value)
-              }
-            >
-              <option value="">Any age</option>
-              {FILTER_OPTIONS.ageRecommendation.map((ageRecommendation) => (
-                <option key={ageRecommendation} value={ageRecommendation}>
-                  {ageRecommendation}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label style={styles.filterLabel}>
-            <span>Shelf Pick</span>
-            <select
-              style={styles.filterControl}
-              value={filters.shelfPick}
-              onChange={(event) => updateFilter("shelfPick", event.target.value)}
-            >
-              <option value="">Any pick</option>
-              {FILTER_OPTIONS.shelfPick.map((shelfPick) => (
-                <option key={shelfPick} value={shelfPick}>
-                  {shelfPick}
+              <option value="">Any vibe</option>
+              {FILTER_OPTIONS.vibe.map((v) => (
+                <option key={v} value={v}>
+                  {v}
                 </option>
               ))}
             </select>
@@ -4395,6 +3844,48 @@ Important:
                 <option key={rating} value={rating}>
                   {rating}+ stars
                 </option>
+              ))}
+            </select>
+          </label>
+
+          <label style={styles.filterLabel}>
+            <span>Reading Level</span>
+            <select
+              style={styles.filterControl}
+              value={filters.readingLevel || ""}
+              onChange={(event) => updateFilter("readingLevel", event.target.value)}
+            >
+              <option value="">Any level</option>
+              {FILTER_OPTIONS.readingLevel.map((level) => (
+                <option key={level} value={level}>{level}</option>
+              ))}
+            </select>
+          </label>
+
+          <label style={styles.filterLabel}>
+            <span>Grade Band</span>
+            <select
+              style={styles.filterControl}
+              value={filters.gradeBand || ""}
+              onChange={(event) => updateFilter("gradeBand", event.target.value)}
+            >
+              <option value="">Any grade</option>
+              {FILTER_OPTIONS.gradeBand.map((grade) => (
+                <option key={grade} value={grade}>{grade}</option>
+              ))}
+            </select>
+          </label>
+
+          <label style={styles.filterLabel}>
+            <span>Age</span>
+            <select
+              style={styles.filterControl}
+              value={filters.ageRecommendation || ""}
+              onChange={(event) => updateFilter("ageRecommendation", event.target.value)}
+            >
+              <option value="">Any age</option>
+              {FILTER_OPTIONS.ageRecommendation.map((age) => (
+                <option key={age} value={age}>{age}</option>
               ))}
             </select>
           </label>
@@ -4442,7 +3933,7 @@ Important:
           try {
             setAuthLoading(true);
             if (auth.currentUser) {
-              localStorage.setItem("profilePic_" + auth.currentUser.uid, dataUrl);
+              localforage.setItem("profilePic_" + auth.currentUser.uid, dataUrl);
               setUser((prev) => ({ ...prev, customPhotoURL: dataUrl }));
               
               if (db) {
@@ -4469,38 +3960,47 @@ Important:
         <section style={styles.authPanel}>
           <div style={styles.authHeader}>
             <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "20px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                <label style={{ cursor: "pointer", position: "relative", flexShrink: 0 }}>
-                  {accountUser.customPhotoURL || accountUser.photoURL ? (
-                    <img src={accountUser.customPhotoURL || accountUser.photoURL} alt="Profile" style={{ width: "80px", height: "80px", borderRadius: "50%", objectFit: "cover", border: "2px solid #e2e8f0" }} />
-                  ) : (
-                    <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="#94a3b8"/>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                  <label style={{ cursor: "pointer", position: "relative", flexShrink: 0 }}>
+                    {accountUser.customPhotoURL || accountUser.photoURL ? (
+	                    <img src={accountUser.customPhotoURL || accountUser.photoURL} alt="Profile" style={{ width: "80px", height: "80px", borderRadius: "50%", objectFit: "cover", border: "2px solid var(--accent)" }} />
+	                  ) : (
+	                    <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "var(--code-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+	                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+	                        <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="var(--text)"/>
+	                      </svg>
+	                    </div>
+	                  )}
+	                  <div style={{ position: "absolute", bottom: "-4px", right: "-4px", background: "var(--social-bg)", border: "1px solid var(--border)", borderRadius: "50%", padding: "4px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
+	                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
                       </svg>
                     </div>
-                  )}
-                  <div style={{ position: "absolute", bottom: "-4px", right: "-4px", background: "#ffffff", borderRadius: "50%", padding: "4px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                      <polyline points="17 8 12 3 7 8"></polyline>
-                      <line x1="12" y1="3" x2="12" y2="15"></line>
-                    </svg>
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleProfilePictureUpload} disabled={authLoading} />
+                  </label>
+                  <div>
+                    <h2 style={{ ...styles.authTitle, marginBottom: "4px" }}>Account</h2>
+                    <p style={{ ...styles.authSubtitle, margin: 0 }}>
+                      Signed in as {getUserDisplayName(accountUser)}
+                      {accountUser.email ? ` (${accountUser.email})` : ""}.
+                    </p>
                   </div>
-                  <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleProfilePictureUpload} disabled={authLoading} />
-                </label>
-                <div>
-                  <h2 style={{ ...styles.authTitle, marginBottom: "4px" }}>Account</h2>
-                  <p style={{ ...styles.authSubtitle, margin: 0 }}>
-                    Signed in as {getUserDisplayName(accountUser)}
-                    {accountUser.email ? ` (${accountUser.email})` : ""}.
-                  </p>
                 </div>
+                <button 
+                  type="button" 
+                  style={{...styles.authSecondaryButton, padding: "6px 12px", fontSize: "12px", background: "transparent", color: "#ef4444", border: "1px solid #ef4444"}} 
+                  onClick={handleSignOut}
+                >
+                  Sign Out
+                </button>
               </div>
 
               {/* Cartoon Selection */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid #f1f5f9", paddingTop: "12px" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "#64748b" }}>Choose a cartoon character:</span>
+	              <div style={{ display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
+	                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text)" }}>Choose a cartoon character:</span>
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                   {CARTOONS.map((cartoon) => {
                     const cartoonUrl = "data:image/svg+xml;utf8," + encodeURIComponent(cartoon.svg);
@@ -4511,7 +4011,7 @@ Important:
                         type="button"
                         style={{
                           padding: 0,
-                          border: isSelected ? "3px solid #2563eb" : "1.5px solid #cbd5e1",
+	                          border: isSelected ? "3px solid var(--accent)" : "1.5px solid var(--border)",
                           background: "none",
                           borderRadius: "50%",
                           cursor: "pointer",
@@ -4523,12 +4023,12 @@ Important:
                           overflow: "hidden",
                           transition: "all 150ms",
                           transform: isSelected ? "scale(1.1)" : "none",
-                          backgroundColor: "#f8fafc"
+	                          backgroundColor: "var(--code-bg)"
                         }}
                         onClick={async () => {
                           try {
                             setAuthLoading(true);
-                            localStorage.setItem("profilePic_" + auth.currentUser.uid, cartoonUrl);
+                            localforage.setItem("profilePic_" + auth.currentUser.uid, cartoonUrl);
                             setUser((prev) => ({ ...prev, customPhotoURL: cartoonUrl }));
                             
                             if (db) {
@@ -4558,7 +4058,7 @@ Important:
                       fontSize: "12px",
                       padding: "6px 12px",
                       borderRadius: "6px",
-                      background: "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)",
+	                      background: "var(--accent)",
                       color: "#ffffff",
                       border: "none",
                       fontWeight: "600",
@@ -4588,10 +4088,18 @@ Important:
             </p>
           )}
 
-          {/* Preferences Section */}
-          <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "16px", marginTop: "16px", marginBottom: "16px", display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div>
-              <h3 style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px", color: "#475569" }}>Preferences</h3>
+          {/* Personalize Section */}
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: "20px", marginTop: "16px", marginBottom: "16px", display: "flex", flexDirection: "column", gap: "20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <span style={{ fontSize: "18px" }}>✨</span>
+              <h3 style={{ fontSize: "16px", fontWeight: "700", color: "var(--text-h)", margin: 0 }}>Personalize</h3>
+            </div>
+
+            {/* Theme selector */}
+            {renderThemeSelector({ compact: true })}
+
+            {/* Emoji preference */}
+            <div style={{ background: "var(--code-bg)", borderRadius: "12px", padding: "14px 16px" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
                 <input
                   type="checkbox"
@@ -4608,53 +4116,13 @@ Important:
                       }
                     }
                   }}
-                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                  style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent)" }}
                 />
-                <span style={{ fontSize: "14px", color: "#334155", fontWeight: "500" }}>Remove all emojis from the app</span>
+                <div>
+                  <span style={{ fontSize: "14px", color: "var(--text)", fontWeight: "600", display: "block" }}>Remove all emojis</span>
+                  <span style={{ fontSize: "12px", color: "var(--text-muted, var(--text))", opacity: 0.7 }}>Strip emojis from labels and buttons</span>
+                </div>
               </label>
-            </div>
-
-            <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "12px" }}>
-              <h3 style={{ fontSize: "12px", fontWeight: "600", color: "#64748b", marginBottom: "8px" }}>App Theme:</h3>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                {THEMES.map((themeItem) => {
-                  const isSelected = appTheme === themeItem.id;
-                  return (
-                    <button
-                      key={themeItem.id}
-                      type="button"
-                      style={{
-                        padding: "6px 12px",
-                        border: isSelected ? "2.5px solid #2563eb" : "1.5px solid #cbd5e1",
-                        background: isSelected ? "rgba(37, 99, 235, 0.08)" : "#ffffff",
-                        borderRadius: "20px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        fontWeight: "600",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        color: isSelected ? "#2563eb" : "#475569",
-                        transition: "all 150ms",
-                      }}
-                      onClick={async () => {
-                        setAppTheme(themeItem.id);
-                        if (auth.currentUser && db) {
-                          try {
-                            const userRef = doc(db, "users", auth.currentUser.uid);
-                            await setDoc(userRef, { appTheme: themeItem.id }, { merge: true });
-                          } catch (err) {
-                            console.error("Error saving theme preference", err);
-                          }
-                        }
-                      }}
-                    >
-                      <span>{themeItem.emoji}</span>
-                      <span>{themeItem.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
             </div>
           </div>
 
@@ -4679,9 +4147,6 @@ Important:
                 </button>
               </>
             )}
-            <button type="button" style={styles.authTextButton} onClick={handleSignOut}>
-              Sign out
-            </button>
           </div>
 
           {authMessage && <p style={styles.authMessage}>{authMessage}</p>}
@@ -4797,6 +4262,17 @@ Important:
             <GoogleIcon />
             <span>Continue with Google</span>
           </button>
+          {/* Apple Sign-In hidden until Developer Account is configured
+          <button
+            type="button"
+            style={styles.appleSignInButton}
+            onClick={handleAppleLogin}
+            disabled={authLoading || !isFirebaseConfigured}
+          >
+            <AppleIcon />
+            <span>Continue with Apple</span>
+          </button>
+          */}
           <button
             type="button"
             style={styles.authTextButton}
@@ -5104,39 +4580,7 @@ Important:
       savedBooksByKey.set(key, savedBook);
     });
 
-    readingList.forEach((book) => {
-      const key = getBookKey(book);
-      const existingSavedBook = savedBooksByKey.get(key);
-
-      if (existingSavedBook) {
-        savedBooksByKey.set(key, {
-          ...existingSavedBook,
-          favorite: true,
-          source: "file-favorite",
-          savedAt:
-            new Date(book.savedAt || 0).getTime() >
-            new Date(existingSavedBook.savedAt || 0).getTime()
-              ? book.savedAt
-              : existingSavedBook.savedAt,
-        });
-        return;
-      }
-
-      savedBooksByKey.set(key, {
-        id: `favorite-${key}`,
-        ids: [],
-        bookTitle: book.title,
-        catalogBook: book,
-        preview:
-          previewCache[getBookKey(book)]?.status === "ready"
-            ? previewCache[getBookKey(book)]
-            : null,
-        favorite: true,
-        location: "Favorite",
-        savedAt: book.savedAt || new Date().toISOString(),
-        source: "favorite",
-      });
-    });
+    // Favorites are now rendered in their own section
 
     const savedBooks = [...savedBooksByKey.values()].sort(
       (a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()
@@ -5185,6 +4629,64 @@ Important:
                 renderBookCard(savedBook.catalogBook, idx, {
                   prefix: "saved-file",
                   savedBook,
+                })
+              )}
+          </div>
+        )}
+        </>
+      ),
+    });
+  }
+
+  function renderFavorites(sectionKey) {
+    const favoriteBooksByKey = new Map();
+
+    readingList.forEach((book) => {
+      const key = getBookKey(book);
+      favoriteBooksByKey.set(key, {
+        id: `favorite-${key}`,
+        ids: [],
+        bookTitle: book.title,
+        catalogBook: book,
+        preview:
+          previewCache[getBookKey(book)]?.status === "ready"
+            ? previewCache[getBookKey(book)]
+            : null,
+        favorite: true,
+        location: "Favorite",
+        savedAt: book.savedAt || new Date().toISOString(),
+        source: "favorite",
+      });
+    });
+
+    const favoriteBooks = [...favoriteBooksByKey.values()].sort(
+      (a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()
+    );
+
+    return renderCollapsibleSection({
+      id: `${sectionKey}-favorites`,
+      title: "Favorites",
+      meta: `${favoriteBooks.length}`,
+      defaultOpen: sectionKey !== "results",
+      style: styles.savedFilesSection,
+      children: (
+        <>
+        <div style={styles.savedFilesTop}>
+          <span style={styles.fileCountBadge}>{favoriteBooks.length}</span>
+        </div>
+
+        {favoriteBooks.filter((sb) => sb.catalogBook).length === 0 ? (
+          <p style={styles.countText}>
+            No favorites yet. Add favorites by clicking the heart icon.
+          </p>
+        ) : (
+          <div style={styles.grid}>
+            {favoriteBooks
+              .filter((favoriteBook) => favoriteBook.catalogBook)
+              .map((favoriteBook, idx) =>
+                renderBookCard(favoriteBook.catalogBook, idx, {
+                  prefix: "favorite-book",
+                  savedBook: favoriteBook,
                 })
               )}
           </div>
@@ -5264,9 +4766,7 @@ Important:
   const homeGreeting = syncUser
     ? `Hi ${signedInName}, ${getTimeGreeting()}.`
     : "Welcome to Lumina.";
-  const homeGreetingDetail = syncUser
-    ? "Your saved books, filters, and preview files are ready here."
-    : "Sign in to sync your saved books and filters across devices.";
+
 
   function renderSavedBooksPage() {
     const visibleFolders = getVisibleFolders(folders);
@@ -5289,132 +4789,198 @@ Important:
     return (
       <section style={styles.pagePanel}>
         <div style={styles.authHeader}>
-          <h2 style={styles.authTitle}>Saved</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h2 style={styles.authTitle}>My Haul 📚</h2>
+            <button
+              type="button"
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                background: "var(--accent-bg)",
+                border: "1px solid var(--accent-border)",
+                color: "var(--accent)",
+                fontSize: "20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+              }}
+              onClick={createFolder}
+              aria-label="Add folder"
+            >
+              +
+            </button>
+          </div>
         </div>
 
-        {renderCollapsibleSection({
-          id: "libraryFavorites",
-          title: "Favorites",
-          meta: `${unifiedBooks.length}`,
-          defaultOpen: true,
-          children: (
-            <>
-              <div style={{ ...styles.folderToolbar, justifyContent: "flex-end", marginBottom: "16px" }}>
+        {saveStatus?.type === "folder" && (
+          <p style={styles.saveStatus}>{saveStatus.message}</p>
+        )}
+
+        <div style={{ display: "flex", gap: "8px", padding: "0 16px", overflowX: "auto" }}>
+          {AVAILABLE_TAGS.map(tag => (
+            <button
+              key={tag}
+              onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
+              style={{
+                background: activeTagFilter === tag ? "var(--accent-bg)" : "var(--card-bg)",
+                border: activeTagFilter === tag ? "1px solid var(--accent)" : "1px solid var(--border)",
+                color: activeTagFilter === tag ? "var(--accent)" : "inherit",
+                borderRadius: "16px",
+                padding: "4px 12px",
+                fontSize: "14px",
+                cursor: "pointer",
+                whiteSpace: "nowrap"
+              }}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "16px" }}>
+          {visibleFolders.map((folderName) => {
+            const folderBooks = unifiedBooks.filter(
+              (book) => {
+                const bookKey = getBookKey(book);
+                const matchesFolder = (bookFolders[bookKey] || "Want to read") === folderName;
+                const matchesTag = !activeTagFilter || (bookTags[bookKey] && bookTags[bookKey].includes(activeTagFilter));
+                return matchesFolder && matchesTag;
+              }
+            );
+            const isDeletable = folderName !== "Want to read";
+
+            return renderCollapsibleSection({
+              id: `folder-${folderName}`,
+              title: getFolderDisplayLabel(folderName),
+              meta: `${folderBooks.length}`,
+              defaultOpen: folderName === "Want to read" || folderBooks.length > 0,
+              style: {
+                background: "var(--code-bg)",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                margin: 0,
+              },
+              headerAction: isDeletable ? (
                 <button
                   type="button"
-                  style={styles.authSecondaryButton}
-                  onClick={createFolder}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#ef4444",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "13px",
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteFolder(folderName);
+                  }}
                 >
-                  Add folder
+                  Delete
                 </button>
-              </div>
+              ) : null,
+              children: (
+                <>
+                  {folderBooks.length === 0 ? (
+                    <p style={{ ...styles.countText, padding: "12px 0 0" }}>No books in this folder.</p>
+                  ) : (
+                    <div style={{ ...styles.grid, padding: "12px 0 0" }}>
+                      {folderBooks.map((book, index) =>
+                        renderBookCard(book, index, { prefix: "library" })
+                      )}
+                    </div>
+                  )}
+                </>
+              )
+            });
+          })}
+        </div>
 
-              {saveStatus?.type === "folder" && (
-                <p style={styles.saveStatus}>{saveStatus.message}</p>
-              )}
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {visibleFolders.map((folderName) => {
-                  const folderBooks = unifiedBooks.filter(
-                    (book) => (bookFolders[getBookKey(book)] || "Want to read") === folderName
-                  );
-                  const isDeletable = !DEFAULT_FOLDERS.includes(folderName);
-
-                  return renderCollapsibleSection({
-                    id: `folder-${folderName}`,
-                    title: getFolderDisplayLabel(folderName),
-                    meta: `${folderBooks.length}`,
-                    defaultOpen: folderName === "Want to read" || folderBooks.length > 0,
-                    style: {
-                      background: "var(--code-bg)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "8px",
-                      margin: 0,
-                    },
-                    headerAction: isDeletable ? (
-                      <button
-                        type="button"
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "#ef4444",
-                          cursor: "pointer",
-                          fontWeight: "600",
-                          fontSize: "13px",
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteFolder(folderName);
-                        }}
-                      >
-                        Delete Folder
-                      </button>
-                    ) : null,
-                    children: (
-                      <>
-                        {folderBooks.length === 0 ? (
-                          <p style={{ ...styles.countText, padding: "12px 0 0" }}>No books in this folder.</p>
-                        ) : (
-                          <div style={{ ...styles.grid, padding: "12px 0 0" }}>
-                            {folderBooks.map((book, index) =>
-                              renderBookCard(book, index, { prefix: "library" })
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )
-                  });
-                })}
-              </div>
-            </>
-          ),
-        })}
-
+        {renderFavorites("library")}
         {renderSavedFiles("library")}
+        {renderScanHistory("library")}
       </section>
     );
   }
 
-  function renderScanHistory() {
+  function renderScanHistory(sectionKey) {
+    const recentScans = (scanHistory || []).slice(0, 5);
+
     return renderCollapsibleSection({
-      id: "scanHistory",
-      title: "Scan History",
-      meta: `${scanHistory.length}`,
-      style: styles.pagePanel,
+      id: `${sectionKey}-scanHistory`,
+      title: "Recent Scans",
+      meta: `${recentScans.length}`,
+      defaultOpen: false,
+      style: styles.savedFilesSection,
       children: (
         <>
-          {scanHistory.length === 0 ? (
-            <p style={styles.countText}>No bookshelf scans recorded yet.</p>
+          {recentScans.length === 0 ? (
+            <p style={styles.countText}>
+              No scan history yet. Scan a bookshelf to get started!
+            </p>
           ) : (
-            <div style={styles.historyList}>
-              {scanHistory.map((scan) => (
-                <div key={scan.id} style={styles.historyItem}>
-                  <div style={styles.historyMeta}>
-                    <strong style={styles.historyItemTitle}>{e("📷", scan.imageName)}</strong>
-                    <span style={styles.historyDate}>
-                      {new Date(scan.createdAt).toLocaleString()} · {scan.bookCount} books · {scan.model}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    style={styles.historyDeleteButton}
-                    onClick={() => deleteScanHistoryItem(scan.id)}
-                    title="Delete scan history record"
-                    aria-label="Delete scan history record"
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "4px 0" }}>
+              {recentScans.map((scan, idx) => {
+                const scanDate = scan.createdAt
+                  ? new Date(scan.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                  : "Unknown date";
+                const scanTime = scan.createdAt
+                  ? new Date(scan.createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+                  : "";
+                return (
+                  <div
+                    key={scan.id || idx}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      background: "var(--card-bg)",
+                      borderRadius: "12px",
+                      border: "1px solid var(--border)",
+                      padding: "12px 14px",
+                      cursor: scan.books?.length ? "pointer" : "default",
+                    }}
+                    onClick={() => {
+                      if (scan.books?.length) {
+                        setBooks(scan.books);
+                        setCurrentPage("scan");
+                        setImagePreview(null);
+                      }
+                    }}
+                    title={scan.books?.length ? "Tap to reload this scan" : ""}
                   >
-                    Delete
-                  </button>
-                </div>
-              ))}
-              <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  style={styles.historyClearAllButton}
-                  onClick={clearAllScanHistory}
-                >
-                  Clear all scan history
-                </button>
-              </div>
+                    <div style={{
+                      width: "42px", height: "42px", borderRadius: "10px",
+                      background: "var(--accent-bg)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: "22px", flexShrink: 0,
+                    }}>
+                      📚
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)" }}>
+                        {scan.bookCount ?? scan.books?.length ?? 0} book{(scan.bookCount ?? scan.books?.length ?? 0) !== 1 ? "s" : ""} detected
+                      </div>
+                      <div style={{ fontSize: "12px", color: "var(--text-l)", marginTop: "2px" }}>
+                        {scanDate} {scanTime && `· ${scanTime}`}
+                      </div>
+                      {scan.imageName && (
+                        <div style={{ fontSize: "11px", color: "var(--text-l)", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {scan.imageName}
+                        </div>
+                      )}
+                    </div>
+                    {scan.books?.length > 0 && (
+                      <div style={{ fontSize: "11px", color: "var(--accent)", fontWeight: 600, flexShrink: 0 }}>
+                        Reload ↗
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </>
@@ -5422,13 +4988,729 @@ Important:
     });
   }
 
+
+
   function renderAccountPage() {
     return (
       <>
         {renderLoginPage()}
         {renderLibraryCards()}
         {canOpenDeveloper && renderDeveloperPage()}
+        <div style={{ marginTop: '32px', textAlign: 'center', color: 'var(--text-l)', fontSize: '12px', paddingBottom: '24px' }}>
+          &copy; 2026 Shilpi Sharma. All rights reserved.
+        </div>
       </>
+    );
+  }
+
+
+
+
+  async function handleStartPlusPurchase(plan) {
+    if (!user) {
+      alert("Hey bestie! ✨ You get 3 free scans a day without an account. Log in to snag 10 free daily scans, or unlock Beta Plus (when logged in) for literally unlimited scans! Limits reset at midnight. 🌙");
+      setCurrentPage("account");
+      return;
+    }
+
+    if (!IS_BETA_MODE && isNativeApp) {
+      try {
+        const offerings = await Purchases.getOfferings();
+        if (offerings.current !== null && offerings.current.availablePackages.length !== 0) {
+          const packageToBuy = offerings.current.availablePackages[0];
+          await Purchases.purchasePackage({ aPackage: packageToBuy });
+        }
+      } catch (e) {
+        console.error("Purchase failed", e);
+        if (!e.userCancelled) {
+          alert("Purchase failed. Please try again.");
+        }
+        return;
+      }
+    }
+
+    setSelectedPlusPlan(plan.id);
+    writeStoredJson("luminaSelectedPlusPlan", {
+      planId: plan.id,
+      selectedAt: new Date().toISOString(),
+    });
+    
+    if (user && db) {
+      setIsUserPlus(true);
+      try {
+        await setDoc(doc(db, "users", user.uid), { isPlusActive: true }, { merge: true });
+      } catch (err) {
+        console.error("Could not activate plus:", err);
+      }
+    } else {
+      setIsAnonymousPlus(true);
+      writeStoredJson("luminaIsPlusActive", true);
+    }
+
+    if (IS_BETA_MODE) {
+      setBetaUnlockPopupOpen(true);
+    } else {
+      alert("Lumina Plus unlocked successfully!");
+    }
+  }
+
+  function handleSwipe(direction, book) {
+    setSwipeHistory((prev) => [...prev, { index: discoverIndex, action: direction, book, prevFolder: bookFolders[getBookKey(book)] }]);
+    setSwipeDirection(direction);
+    
+    if (direction === "right") {
+      setBookFolders((prev) => ({
+        ...prev,
+        [getBookKey(book)]: selectedDiscoverFolder,
+      }));
+    } else if (direction === "left") {
+      const currentFolder = bookFolders[getBookKey(book)] || "Want to read";
+      if (currentFolder === selectedDiscoverFolder) {
+        setBookFolders((prev) => {
+          const next = { ...prev };
+          delete next[getBookKey(book)];
+          return next;
+        });
+      }
+    }
+    
+    setTimeout(() => {
+      setSwipeDirection(null);
+      setDiscoverIndex(i => i + 1);
+    }, 300);
+  }
+
+  function handleRewind() {
+    if (swipeHistory.length === 0) return;
+    const lastAction = swipeHistory[swipeHistory.length - 1];
+    setSwipeHistory((prev) => prev.slice(0, -1));
+    setDiscoverIndex(lastAction.index);
+    
+    setBookFolders((prev) => {
+      const next = { ...prev };
+      if (lastAction.prevFolder) {
+        next[getBookKey(lastAction.book)] = lastAction.prevFolder;
+      } else {
+        delete next[getBookKey(lastAction.book)];
+      }
+      return next;
+    });
+  }
+
+  function renderDiscoverPage() {
+    const discoverBooks = savedFiles.map(f => f.payload?.catalogBook).filter(Boolean);
+    const currentBook = discoverBooks[discoverIndex];
+    const visibleFolders = getVisibleFolders(folders);
+
+    return (
+      <section style={{...styles.pagePanel, display: "flex", flexDirection: "column", height: "100%"}}>
+        <div style={styles.authHeader}>
+          <h2 style={styles.authTitle}>Organize Library</h2>
+          <p style={styles.authSubtitle}>Swipe right to add to '{selectedDiscoverFolder}'</p>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "center", padding: "0 16px" }}>
+          <select
+            value={selectedDiscoverFolder}
+            onChange={(e) => setSelectedDiscoverFolder(e.target.value)}
+            style={{
+              padding: "8px 12px",
+              borderRadius: "8px",
+              border: "1px solid var(--border)",
+              background: "var(--card-bg)",
+              color: "var(--text)",
+              fontSize: "14px",
+              fontWeight: "600",
+              outline: "none",
+              cursor: "pointer",
+            }}
+          >
+            {visibleFolders.map(folder => (
+              <option key={folder} value={folder}>{folder}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", padding: "16px" }}>
+          {!currentBook ? (
+            <div style={{ textAlign: "center", color: "var(--text-l)" }}>
+              <p>You've organized all your saved books!</p>
+              <button style={{...styles.authPrimaryButton, marginTop: "16px"}} onClick={() => { setDiscoverIndex(0); setSwipeHistory([]); }}>Restart</button>
+            </div>
+          ) : (
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "340px",
+                aspectRatio: "3/4",
+                background: "var(--card-bg)",
+                borderRadius: "16px",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                position: "relative",
+                transition: "transform 0.3s ease, opacity 0.3s ease",
+                transform: swipeDirection === "left" ? "translateX(-150%) rotate(-15deg)" : swipeDirection === "right" ? "translateX(150%) rotate(15deg)" : "translateX(0) rotate(0)",
+                opacity: swipeDirection ? 0 : 1,
+              }}
+            >
+              <div style={{ flex: 1, position: "relative" }}>
+                <img 
+                  src={currentBook?.imageLinks?.thumbnail || currentBook?.coverUrl || ""} 
+                  style={{ width: "100%", height: "100%", objectFit: "cover", backgroundColor: "var(--bg)" }} 
+                  alt={currentBook.title} 
+                  onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} 
+                />
+                <div style={{ display: (currentBook?.imageLinks?.thumbnail || currentBook?.coverUrl) ? 'none' : 'flex', width: "100%", height: "100%", backgroundColor: "var(--border)", alignItems: "center", justifyContent: "center", fontSize: "64px" }}>
+                  📚
+                </div>
+                <div style={{ position: "absolute", top: 16, right: 16, display: "flex", gap: "8px", flexDirection: "column" }}>
+                  {(currentBook.emojiTags || []).map((tag, i) => (
+                     <span key={i} style={{ background: "rgba(255,255,255,0.9)", padding: "8px", borderRadius: "50%", fontSize: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}>
+                       {tag}
+                     </span>
+                  ))}
+                </div>
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "24px 16px 16px", background: "linear-gradient(to top, rgba(0,0,0,0.9), transparent)", color: "#fff" }}>
+                  <h3 style={{ fontSize: "24px", fontWeight: "bold", margin: "0 0 4px", textShadow: "0 2px 4px rgba(0,0,0,0.5)" }}>{currentBook.title}</h3>
+                  <p style={{ margin: "0 0 8px", opacity: 0.9 }}>{currentBook.author}</p>
+                  <p style={{ margin: 0, fontSize: "14px", fontStyle: "italic", opacity: 0.8 }}>{currentBook.hook || (currentBook.description ? currentBook.description.substring(0, 100) + "..." : "")}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {currentBook && (
+          <div style={{ display: "flex", justifyContent: "center", gap: "24px", padding: "16px", paddingBottom: "32px", alignItems: "center" }}>
+            <button
+              style={{ width: "48px", height: "48px", borderRadius: "50%", background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", color: "var(--text)", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", cursor: swipeHistory.length > 0 ? "pointer" : "default", opacity: swipeHistory.length > 0 ? 1 : 0.5 }}
+              onClick={handleRewind}
+              disabled={swipeHistory.length === 0}
+            >
+              ⏪
+            </button>
+            <button
+              style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px", color: "#ef4444", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", cursor: "pointer" }}
+              onClick={() => handleSwipe("left", currentBook)}
+            >
+              ❌
+            </button>
+            <button
+              style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px", color: "#22c55e", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", cursor: "pointer" }}
+              onClick={() => handleSwipe("right", currentBook)}
+            >
+              💚
+            </button>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  async function handleThemeSelect(themeId) {
+    setAppTheme(themeId);
+
+    if (auth.currentUser && db) {
+      try {
+        const userRef = doc(db, "users", auth.currentUser.uid);
+        await setDoc(userRef, { appTheme: themeId }, { merge: true });
+      } catch (err) {
+        console.error("Error saving theme preference", err);
+      }
+    }
+  }
+
+  function renderThemeSelector({ compact = false } = {}) {
+    return (
+      <div style={compact ? styles.themeSelectorCompact : styles.themeSelectorPanel}>
+        <div style={styles.themeSelectorHeader}>
+          <h3 style={compact ? styles.themeSelectorTitleSmall : styles.themeSelectorTitle}>
+            Default Mode
+          </h3>
+          <span style={styles.themeSelectorMeta}>Website theme</span>
+        </div>
+        <div style={styles.themeSelectorGrid}>
+          {THEMES.map((themeItem) => {
+            const isSelected = appTheme === themeItem.id;
+            return (
+              <button
+                key={themeItem.id}
+                type="button"
+                style={{
+                  ...styles.themeChoiceButton,
+                  ...(isSelected ? styles.themeChoiceButtonActive : {}),
+                }}
+                onClick={() => handleThemeSelect(themeItem.id)}
+                aria-pressed={isSelected}
+              >
+                <span style={styles.themeChoiceIcon}>{themeItem.emoji}</span>
+                <span>{themeItem.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  async function handleVibeAiAnalysis(mode, photoFile = null) {
+    if (!checkScanLimit()) return;
+    incrementScanCount();
+    if (!isGeminiConfigured) {
+      setVibeStatus("AI is not configured.");
+      return;
+    }
+    setVibeAiResult(null);
+    setVibeAiPreviews({});
+    setVibeAiLoading(mode);
+    setVibeStatus("");
+
+    try {
+      await ensureScanAuth();
+      let parts = [];
+      let currentCacheKey = null;
+
+      if (mode === "photo" && photoFile) {
+        const compressed = await compressImage(photoFile);
+        const base64 = await encodeFileToBase64(compressed);
+        parts = [
+          {
+            text: `You are a literary personality analyst with the gift of eloquent, poetic language.
+
+Look at this bookshelf photo. Identify the books you can see. Based on them, write a rich, vivid personality profile of this reader. Use beautiful, evocative language — not clinical analysis.
+
+Return ONLY valid JSON:
+{
+  "personalityTitle": "A creative 3-5 word title for this reader archetype (e.g. 'The Midnight Wanderer', 'The Quiet Revolutionary')",
+  "personalityEssay": "A super short 2-3 sentence personality portrait using poetic, insightful language. Speak directly to the reader as 'you'.",
+  "readingDNA": ["3 short punchy traits, each under 6 words"],
+  "suggestions": [
+    {
+      "title": "Book title",
+      "author": "Author name",
+      "reason": "One compelling sentence on why this reader needs this book"
+    }
+  ]
+}
+
+Make suggestions array exactly 3 books. These should be globally acclaimed books that perfectly match this reader's soul. No placeholders.`,
+          },
+          {
+            inlineData: {
+              mimeType: photoFile.type || "image/jpeg",
+              data: base64,
+            },
+          },
+        ];
+      } else {
+        let bookList = [];
+        if (mode === "saved") {
+          const savedGroups = getSavedBookGroups(savedFiles).map((s) => s.catalogBook).filter(Boolean);
+          bookList = [...readingList, ...savedGroups];
+        } else if (mode === "scan") {
+          bookList = books.length > 0 ? books : (scanHistory[0]?.books || []);
+        }
+        if (!bookList.length) {
+          setVibeStatus(mode === "scan" ? "No scan results found. Scan a shelf first." : "No saved books found. Save some books first.");
+          setVibeAiLoading("");
+          return;
+        }
+        const bookLines = bookList
+          .filter((b) => b?.title)
+          .slice(0, 40)
+          .map((b) => `- "${b.title}"${b.author ? ` by ${b.author}` : ""}`);
+          
+        currentCacheKey = mode + ":" + bookLines.join("|");
+        if (vibeAiCacheRef.current[currentCacheKey]) {
+          setVibeAiResult(vibeAiCacheRef.current[currentCacheKey].result);
+          setVibeAiPreviews(vibeAiCacheRef.current[currentCacheKey].previews);
+          setVibeAiLoading("");
+          return;
+        }
+
+        parts = [{
+          text: `You are a literary personality analyst with the gift of eloquent, poetic language.
+
+Here are the books this reader has on their shelf:
+${bookLines.join("\n")}
+
+Write a rich, vivid personality profile of this reader. Use beautiful, evocative language — not clinical analysis.
+
+Return ONLY valid JSON:
+{
+  "personalityTitle": "A creative 3-5 word title for this reader archetype (e.g. 'The Midnight Wanderer', 'The Quiet Revolutionary')",
+  "personalityEssay": "A super short 2-3 sentence personality portrait using poetic, insightful language. Speak directly to the reader as 'you'.",
+  "readingDNA": ["3 short punchy traits, each under 6 words"],
+  "suggestions": [
+    {
+      "title": "Book title",
+      "author": "Author name",
+      "reason": "One compelling sentence on why this reader needs this book"
+    }
+  ]
+}
+
+Make suggestions array exactly 3 globally acclaimed books that perfectly match this reader's soul.`,
+        }];
+      }
+
+      beginGeminiCall("Vibe personality");
+      const result = await generateGeminiContent(
+        [{ role: "user", parts }],
+        { maxOutputTokens: 2048 },
+        "Vibe personality"
+      );
+      finishGeminiCall("Vibe personality", "Success", getTotalTokenCount(result));
+
+      const parsed = safeParseJson(getGeminiText(result));
+      if (!parsed?.personalityTitle) {
+        setVibeStatus("AI couldn't read that. Try again with a clearer photo or more books.");
+        setVibeAiLoading("");
+        return;
+      }
+      parsed.mode = mode; // Inject mode so we can explain the suggestions later
+      setVibeAiResult(parsed);
+
+      // Fetch Google Books previews for suggestions asynchronously so it doesn't block UI
+      if (mode !== "photo" && currentCacheKey) {
+        vibeAiCacheRef.current[currentCacheKey] = { result: parsed, previews: {} };
+      }
+
+      setVibeAiLoading(""); // stop spinner immediately
+
+      if (parsed.suggestions?.length) {
+        parsed.suggestions.forEach(async (suggestion) => {
+          const preview = await findBookPreview({ title: suggestion.title, author: suggestion.author });
+          if (preview) {
+            setVibeAiPreviews((prev) => {
+              const updated = { ...prev, [suggestion.title]: preview };
+              if (currentCacheKey && vibeAiCacheRef.current[currentCacheKey]) {
+                vibeAiCacheRef.current[currentCacheKey].previews = updated;
+              }
+              return updated;
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.error("Vibe AI analysis failed:", err);
+      finishGeminiCall("Vibe personality", "Failed");
+      setVibeStatus("Analysis failed. Check your connection and try again.");
+    } finally {
+      setVibeAiLoading("");
+    }
+  }
+
+  function renderVibePage() {
+    if (!user) {
+      return (
+        <section style={styles.vibePage}>
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            textAlign: "center",
+            padding: "64px 24px",
+            gap: "16px",
+          }}>
+            <span style={{ fontSize: "48px" }}>✨</span>
+            <h2 style={styles.vibeTitle}>Your shelf has a personality.</h2>
+            <p style={{ ...styles.vibeText, maxWidth: "320px" }}>
+              Sign in to unlock your Shelf Vibe — a reading personality profile built from your scans and saved books.
+            </p>
+            <button
+              type="button"
+              style={styles.authPrimaryButton}
+              onClick={() => setCurrentPage("account")}
+            >
+              Sign in to see your vibe
+            </button>
+          </div>
+        </section>
+      );
+    }
+
+    const selectedPlan = PLUS_PLANS.find((plan) => plan.id === selectedPlusPlan) || PLUS_PLANS[0];
+
+    return (
+      <section style={styles.vibePage}>
+        <div style={styles.vibeHero}>
+          <div>
+            <span style={styles.vibeKicker}>Your shelf. Your personality. Uncovered.</span>
+            <h2 style={styles.vibeTitle}>We read your shelf. Here&apos;s what we found.</h2>
+            <p style={styles.vibeText}>
+              Based on the books you scan, save, and keep — Lumina reads between the lines.
+              Pick a mood to shift the lens.
+            </p>
+          </div>
+        </div>
+
+        {/* ── AI Personality Reader ── */}
+        <div style={styles.vibeSection}>
+          <div style={styles.vibeSectionHeader}>
+            <div>
+              <h3 style={styles.vibeSectionTitle}>✨ AI Reads You</h3>
+              <p style={styles.vibeText}>Let AI analyse your shelf and reveal who you really are as a reader.</p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "14px" }}>
+            {/* Photo button */}
+            <label
+              style={{
+                ...styles.authPrimaryButton,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                cursor: vibeAiLoading ? "not-allowed" : "pointer",
+                opacity: vibeAiLoading ? 0.6 : 1,
+              }}
+            >
+              📷 {vibeAiLoading === "photo" ? "Analysing photo…" : "Scan a shelf photo"}
+              <input
+                ref={vibePhotoInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: "none" }}
+                disabled={!!vibeAiLoading}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleVibeAiAnalysis("photo", file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
+              <button
+                type="button"
+                style={{
+                  ...styles.authSecondaryButton,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  opacity: (vibeAiLoading || (savedFiles.length === 0 && readingList.length === 0)) ? 0.6 : 1,
+                }}
+                disabled={!!vibeAiLoading || (savedFiles.length === 0 && readingList.length === 0)}
+                onClick={() => handleVibeAiAnalysis("saved")}
+              >
+                📚 {vibeAiLoading === "saved" ? "Reading your shelf…" : "Read my saved books"}
+              </button>
+              {savedFiles.length === 0 && readingList.length === 0 && (
+                <span style={{ fontSize: "11px", color: "#94a3b8", textAlign: "center" }}>
+                  No saved books yet. Cannot generate AI text.
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              style={{
+                ...styles.authSecondaryButton,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                opacity: (vibeAiLoading || (books.length === 0 && scanHistory.length === 0)) ? 0.6 : 1,
+              }}
+              disabled={!!vibeAiLoading || (books.length === 0 && scanHistory.length === 0)}
+              onClick={() => handleVibeAiAnalysis("scan")}
+            >
+              🔍 {vibeAiLoading === "scan" ? "Reading last scan…" : "Read last scan"}
+            </button>
+          </div>
+
+          {/* Loading state */}
+          {vibeAiLoading && (
+            <div style={{ marginTop: "20px", display: "flex", alignItems: "center", gap: "12px", color: "var(--text)" }}>
+              <div style={{
+                width: "20px", height: "20px", borderRadius: "50%",
+                border: "2px solid var(--accent-border)",
+                borderTopColor: "var(--accent)",
+                animation: "spin 0.8s linear infinite",
+                flexShrink: 0,
+              }} />
+              <span style={{ fontSize: "14px", fontStyle: "italic" }}>Reading your shelf… this takes a moment.</span>
+            </div>
+          )}
+
+          {/* AI Result */}
+          {vibeAiResult && (
+            <div style={{ marginTop: "20px", display: "grid", gap: "20px" }}>
+              {/* Personality profile card */}
+              <div style={{
+                borderRadius: "14px",
+                background: "#0d1117",
+                color: "#ffffff",
+                overflow: "hidden",
+                border: "1px solid rgba(37, 99, 235, 0.22)",
+                boxShadow: "0 20px 50px rgba(37, 99, 235, 0.12)",
+              }}>
+                <div style={{
+                  padding: "20px",
+                  borderBottom: "1px solid rgba(37, 99, 235, 0.12)",
+                  background: "rgba(37, 99, 235, 0.06)",
+                }}>
+                  <span style={{ fontSize: "11px", fontWeight: "800", textTransform: "uppercase", letterSpacing: "0.1em", color: "#93c5fd", display: "block", marginBottom: "6px" }}>AI reads you</span>
+                  <h3 style={{ margin: 0, fontSize: "26px", fontWeight: "900", lineHeight: 1.1, color: "#ffffff" }}>{vibeAiResult.personalityTitle}</h3>
+                </div>
+                <div style={{ padding: "20px", borderBottom: "1px solid rgba(37,99,235,0.08)" }}>
+                  <span style={{ fontSize: "10px", fontWeight: "800", textTransform: "uppercase", letterSpacing: "0.09em", color: "#60a5fa", display: "block", marginBottom: "10px" }}>Your reader portrait</span>
+                  {(vibeAiResult.personalityEssay || "").split("\n\n").filter(Boolean).map((para, i) => (
+                    <p key={i} style={{ margin: i === 0 ? 0 : "12px 0 0", color: "rgba(255,255,255,0.88)", fontSize: "15px", lineHeight: 1.65 }}>{para}</p>
+                  ))}
+                </div>
+                {vibeAiResult.readingDNA?.length > 0 && (
+                  <div style={{ padding: "16px 20px" }}>
+                    <span style={{ fontSize: "10px", fontWeight: "800", textTransform: "uppercase", letterSpacing: "0.09em", color: "#a5b4fc", display: "block", marginBottom: "10px" }}>Your reading DNA</span>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {vibeAiResult.readingDNA.map((trait) => (
+                        <span key={trait} style={{ background: "rgba(37,99,235,0.18)", borderRadius: "20px", padding: "5px 14px", fontSize: "12px", color: "#bfdbfe", fontWeight: "600" }}>{trait}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Book suggestions */}
+              {vibeAiResult.suggestions?.length > 0 && (
+                <div>
+                  <h3 style={{ ...styles.vibeSectionTitle, marginBottom: "4px" }}>📖 Your Books</h3>
+                  <p style={{ fontSize: "13px", color: "var(--text-h)", marginBottom: "16px", fontStyle: "italic", opacity: 0.8 }}>
+                    {vibeAiResult.mode === "photo" && "These are personalized AI recommendations based on the books visible in your photo."}
+                    {vibeAiResult.mode === "saved" && "These are personalized AI recommendations based on your saved books and reading list."}
+                    {vibeAiResult.mode === "scan" && "These are personalized AI recommendations based on your most recently scanned shelf."}
+                  </p>
+                  <div style={{ display: "grid", gap: "16px" }}>
+                    {vibeAiResult.suggestions.map((book, idx) => {
+                      const preview = vibeAiPreviews[book.title];
+                      return (
+                        <div key={book.title} style={{
+                          borderRadius: "12px",
+                          border: "1px solid var(--border)",
+                          background: "var(--social-bg)",
+                          overflow: "hidden",
+                          boxShadow: "0 8px 24px rgba(31,45,61,0.07)",
+                        }}>
+                          {/* Book header */}
+                          <div style={{ padding: "14px 16px", display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                            <span style={{
+                              flexShrink: 0,
+                              width: "28px", height: "28px",
+                              borderRadius: "8px",
+                              background: "var(--accent-bg)",
+                              color: "var(--accent)",
+                              fontWeight: "800",
+                              fontSize: "13px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}>{idx + 1}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <h4 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: "var(--text-h)", lineHeight: 1.2 }}>{book.title}</h4>
+                              <p style={{ margin: "2px 0 0", fontSize: "13px", color: "var(--accent)", fontWeight: "600" }}>{book.author}</p>
+                              <p style={{ margin: "6px 0 0", fontSize: "13px", color: "var(--text)", lineHeight: 1.45, fontStyle: "italic" }}>{book.reason}</p>
+                            </div>
+                          </div>
+                          {/* Preview embed */}
+                          {preview?.status === "ready" && preview.embedUrl && (
+                            <div style={{ borderTop: "1px solid var(--border)" }}>
+                              <iframe
+                                title={`Preview: ${book.title}`}
+                                src={preview.embedUrl}
+                                style={{ width: "100%", height: "380px", border: "none", display: "block" }}
+                              />
+                              <div style={{ padding: "8px 16px", background: "var(--code-bg)", display: "flex", justifyContent: "flex-end" }}>
+                                <a
+                                  href={preview.googleBooksReaderLink || `https://books.google.com/books?q=${encodeURIComponent(book.title)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ fontSize: "12px", color: "var(--accent)", fontWeight: "600" }}
+                                >
+                                  Open in Google Books →
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                          {preview?.status === "unavailable" && (
+                            <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", background: "var(--code-bg)" }}>
+                              <span style={{ fontSize: "12px", color: "var(--text)", fontStyle: "italic" }}>No preview available</span>
+                              <a
+                                href={`https://www.google.com/search?q=${encodeURIComponent(book.title + " " + book.author)}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ marginLeft: "10px", fontSize: "12px", color: "var(--accent)", fontWeight: "600" }}
+                              >
+                                Search online →
+                              </a>
+                            </div>
+                          )}
+                          {!preview && (
+                            <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", background: "var(--code-bg)" }}>
+                              <span style={{ fontSize: "12px", color: "var(--text)", fontStyle: "italic" }}>Loading preview…</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+
+        {!(user ? isUserPlus : isAnonymousPlus) && (
+          <div style={styles.vibeSection}>
+            <div style={styles.vibeSectionHeader}>
+              <div>
+                <h3 style={styles.vibeSectionTitle}>Lumina Plus</h3>
+              </div>
+            </div>
+            <div style={styles.vibePlanGrid}>
+              {PLUS_PLANS.map((plan) => {
+                const isSelected = selectedPlusPlan === plan.id;
+                return (
+                  <article
+                    key={plan.id}
+                    style={{
+                      ...styles.vibePlanCard,
+                      ...(isSelected ? styles.vibePlanCardActive : {}),
+                    }}
+                  >
+                    <div style={styles.vibeSectionHeader}>
+                      <div>
+                        <h4 style={styles.vibePlanTitle}>{plan.name}</h4>
+                        <p style={styles.vibeText}>{plan.caption}</p>
+                      </div>
+                      <strong style={styles.vibePlanPrice}>{plan.price}</strong>
+                    </div>
+                    <ul style={styles.vibePerkList}>
+                      {plan.perks.map((perk) => (
+                        <li key={perk}>{perk}</li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      style={isSelected ? styles.authPrimaryButton : styles.authSecondaryButton}
+                      onClick={() => handleStartPlusPurchase(plan)}
+                    >
+                      {isSelected ? "Beta Plus Unlocked" : "Unlock Beta Plus"}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {vibeStatus && <p style={styles.vibeStatus}>{vibeStatus}</p>}
+
+        </section>
     );
   }
 
@@ -5497,6 +5779,7 @@ Important:
             {developerUsage.lastStatus ? ` · ${developerUsage.lastStatus}` : ""}
             {developerUsage.lastProvider ? ` · ${developerUsage.lastProvider}` : ""}
             {developerUsage.lastModel ? ` · ${developerUsage.lastModel}` : ""}
+            {developerUsage.lastDurationMs ? ` · ${(developerUsage.lastDurationMs / 1000).toFixed(1)}s` : ""}
           </strong>
         </div>
         <div style={styles.developerStatCard}>
@@ -5559,9 +5842,21 @@ Important:
           </strong>
         </div>
         <div style={styles.developerStatCard}>
-          <span style={styles.developerStatLabel}>Total API Calls</span>
+          <span style={styles.developerStatLabel}>API calls today</span>
           <strong style={styles.developerStatValue}>
-            {developerStats.totalApiCalls?.toLocaleString() || "0"}
+            {developerStats.apiCallsToday?.toLocaleString() ?? "0"}
+          </strong>
+        </div>
+        <div style={styles.developerStatCard}>
+          <span style={styles.developerStatLabel}>API calls — last 7 days</span>
+          <strong style={styles.developerStatValue}>
+            {developerStats.apiCallsWeek?.toLocaleString() ?? "0"}
+          </strong>
+        </div>
+        <div style={styles.developerStatCard}>
+          <span style={styles.developerStatLabel}>API calls — last 30 days</span>
+          <strong style={styles.developerStatValue}>
+            {developerStats.apiCallsMonth?.toLocaleString() ?? "0"}
           </strong>
         </div>
         <div style={styles.developerStatCard}>
@@ -5573,9 +5868,48 @@ Important:
           </strong>
         </div>
       </div>
+
+      <div style={{ marginTop: "32px" }}>
+        <h3 style={{ ...styles.cardTitle, marginBottom: "12px" }}>Recent API Calls</h3>
+        {developerEvents.length === 0 ? (
+          <p style={styles.countText}>No recent calls.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {developerEvents.map((ev, i) => (
+              <div key={i} style={{ ...styles.card, padding: "12px", background: "var(--card-bg)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontWeight: "bold" }}>{ev.callType || "API Call"}</span>
+                  <span style={{ fontSize: "12px", color: "var(--text-l)" }}>
+                    {ev.createdAt?.toDate ? getDisplayTime(ev.createdAt.toDate()) : (ev.date || "")}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
+                  <span style={{ fontSize: "12px", padding: "2px 8px", background: "var(--bg)", borderRadius: "4px" }}>
+                    {ev.provider} {ev.model ? `(${ev.model})` : ""}
+                  </span>
+                  <span style={{ fontSize: "12px", padding: "2px 8px", background: "var(--bg)", borderRadius: "4px" }}>
+                    {(ev.durationMs / 1000).toFixed(1)}s
+                  </span>
+                  <span style={{ fontSize: "12px", padding: "2px 8px", background: "var(--bg)", borderRadius: "4px", color: ev.status === "Success" ? "var(--green)" : "var(--red)" }}>
+                    {ev.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
         </>
       ),
     });
+
+  if (!isStoreLoaded) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', backgroundColor: 'var(--bg)', color: 'var(--text)' }}>
+        <h2>Lumina is initializing...</h2>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
@@ -5676,7 +6010,7 @@ Important:
           {currentPage === "scan" && (
             <div style={{ marginTop: "12px", textAlign: "center" }}>
               <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 4px 0", color: "#1e293b", textAlign: "center" }}>Take a photo of your bookshelf</h2>
-              <p style={{ ...styles.homeSubtitleBody, textAlign: "center" }}>
+              <p style={{ ...styles.homeSubtitleBody, textAlign: "center", color: "#1e293b" }}>
                 Lumina will identify the books, organize them, and help you
                 choose what to read next.
               </p>
@@ -5687,6 +6021,8 @@ Important:
 
       {currentPage === "account" && renderAccountPage()}
       {currentPage === "saved" && renderSavedBooksPage()}
+      {currentPage === "vibe" && renderVibePage()}
+      {currentPage === "discover" && renderDiscoverPage()}
 
       {currentPage === "scan" && (
         <>
@@ -5694,6 +6030,16 @@ Important:
             {authReady && (
               <h2 style={{...styles.homeGreetingTitle, fontSize: "24px", fontWeight: "700"}}>{homeGreeting}</h2>
             )}
+            <div style={{ marginTop: "8px", fontSize: "14px", color: "#64748b", display: "flex", justifyContent: "center", gap: "12px" }}>
+              {(user ? isUserPlus : isAnonymousPlus) ? (
+                <span style={{ background: "var(--accent-bg)", color: "var(--accent)", padding: "4px 10px", borderRadius: "12px", fontWeight: "600" }}>✨ Plus: Unlimited Scans</span>
+              ) : (user ? userScanCount : anonymousScanCount) > 0 ? (
+                <>
+                  <span>Scans used: <strong>{user ? userScanCount : anonymousScanCount} / {user ? 10 : 3}</strong></span>
+                  <span>Plus: <strong>Unlimited</strong></span>
+                </>
+              ) : null}
+            </div>
           </section>
 
       <div className="scan-buttons-enter" style={{ ...styles.uploadBox, display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
@@ -5736,6 +6082,22 @@ Important:
             onChange={(e) => handleImage(e.target.files[0])}
           />
         </label>
+
+        <button
+          type="button"
+          className="btn-press"
+          style={{
+            ...styles.uploadPhotoButton,
+            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+            margin: 0,
+            background: "var(--accent-bg)",
+            color: "var(--accent)"
+          }}
+          onClick={handleBarcodeScan}
+          disabled={isOffline || loading}
+        >
+          {e("🏷️", "Scan Barcode")}
+        </button>
 
         <button
           type="button"
@@ -5911,7 +6273,7 @@ Important:
           const previewButton = getPreviewButtonState(selectedBook);
 
           return (
-            <div className="scan-modal-scroll" style={styles.modal} onClick={() => setSelectedBook(null)}>
+            <div className="scan-modal-scroll" style={styles.modal} onClick={() => { if(window.location.hash === "#details") window.history.back(); else setSelectedBook(null); }}>
               <div
                 style={{
                   ...styles.modalContent,
@@ -5942,6 +6304,16 @@ Important:
                       {selectedBook.shelfPick}
                     </p>
                   </div>
+                  
+                  <button
+                    type="button"
+                    style={{ ...styles.closeIconButton, position: "absolute", top: "16px", right: "16px" }}
+                    onClick={(e) => { e.stopPropagation(); if(window.location.hash === "#details") window.history.back(); else setSelectedBook(null); }}
+                    aria-label="Close details"
+                    title="Close details"
+                  >
+                    ✕
+                  </button>
                 </div>
 
                 {renderCollapsibleSection({
@@ -6132,6 +6504,7 @@ Important:
                       ...(detailsSaved ? styles.savedButton : {}),
                     }}
                     onClick={() => downloadBookDetails(selectedBook)}
+                    disabled={detailsSaved}
                   >
                     {detailsSaved ? "Saved Details" : "Save Details"}
                   </button>
@@ -6143,9 +6516,13 @@ Important:
                         ...(similarBooksView === "shelf" ? styles.selectedButton : {}),
                       }}
                       onClick={() => {
-                        setSimilarBooksView((currentView) =>
-                          currentView === "shelf" ? null : "shelf"
-                        );
+                        setSimilarBooksView((currentView) => {
+                          const nextView = currentView === "shelf" ? null : "shelf";
+                          if (nextView) {
+                            setOpenSections((prev) => ({ ...prev, detailNotes: false, detailAuthor: false }));
+                          }
+                          return nextView;
+                        });
                       }}
                     >
                       Similar on shelf
@@ -6160,6 +6537,9 @@ Important:
                     onClick={() => {
                       const nextOpen = similarBooksView !== "global";
                       setSimilarBooksView(nextOpen ? "global" : null);
+                      if (nextOpen) {
+                        setOpenSections((prev) => ({ ...prev, detailNotes: false, detailAuthor: false }));
+                      }
                       if (
                         nextOpen &&
                         selectedBook &&
@@ -6175,7 +6555,7 @@ Important:
 
                   <button
                     style={{ ...styles.closeButton, marginTop: 0 }}
-                    onClick={() => setSelectedBook(null)}
+                    onClick={(e) => { e.stopPropagation(); if(window.location.hash === "#details") window.history.back(); else setSelectedBook(null); }}
                   >
                     Close
                   </button>
@@ -6265,7 +6645,7 @@ Important:
         </div>
       )}
 
-      {currentPage === "scan" && compareOpen && compare.length > 0 && (
+      {compareOpen && compare.length > 0 && (
         <div style={styles.modal} onClick={() => setCompareOpen(false)}>
           <div style={styles.compareModalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.previewHeader}>
@@ -6358,6 +6738,18 @@ Important:
               </button>
               <button
                 type="button"
+                style={styles.appleSignInButton}
+                onClick={() => {
+                  setLibraryCardLoginPromptOpen(false);
+                  handleAppleLogin();
+                }}
+                disabled={authLoading || !isFirebaseConfigured}
+              >
+                <AppleIcon />
+                <span>Continue with Apple</span>
+              </button>
+              <button
+                type="button"
                 style={styles.secondaryButton}
                 onClick={() => {
                   setLibraryCardLoginPromptOpen(false);
@@ -6385,21 +6777,50 @@ Important:
             <div style={styles.promptIcon} aria-hidden="true">⌕</div>
             <h2 style={styles.modalTitle}>Scan limit reached</h2>
             <p style={styles.previewSubtitle}>
-              You have used your 10 anonymous scans. Continue with Google to keep scanning.
+              {user
+                ? "You have used your 10 free scans. Upgrade to Lumina Plus to unlock unlimited scanning!"
+                : "You have used your 3 anonymous scans. Continue with Google to keep scanning."}
             </p>
             <div style={styles.previewActionRow}>
-              <button
-                type="button"
-                style={styles.googleSignInButton}
-                onClick={() => {
-                  setScanLimitPromptOpen(false);
-                  handleGoogleLogin();
-                }}
-                disabled={authLoading || !isFirebaseConfigured}
-              >
-                <GoogleIcon />
-                <span>Continue with Google</span>
-              </button>
+              {user ? (
+                <button
+                  type="button"
+                  style={styles.googleSignInButton}
+                  onClick={() => {
+                    setScanLimitPromptOpen(false);
+                    setCurrentPage("vibe"); // Redirect to upgrade page
+                  }}
+                >
+                  <span>Upgrade to Lumina Plus</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    style={styles.googleSignInButton}
+                    onClick={() => {
+                      setScanLimitPromptOpen(false);
+                      handleGoogleLogin();
+                    }}
+                    disabled={authLoading || !isFirebaseConfigured}
+                  >
+                    <GoogleIcon />
+                    <span>Continue with Google</span>
+                  </button>
+                  <button
+                    type="button"
+                    style={styles.appleSignInButton}
+                    onClick={() => {
+                      setScanLimitPromptOpen(false);
+                      handleAppleLogin();
+                    }}
+                    disabled={authLoading || !isFirebaseConfigured}
+                  >
+                    <AppleIcon />
+                    <span>Continue with Apple</span>
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 style={styles.secondaryButton}
@@ -6454,6 +6875,49 @@ Important:
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {tagModal.isOpen && (
+        <div style={styles.modal} onClick={closeTagModal}>
+          <div style={styles.promptModalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.promptIcon} aria-hidden="true">🏷️</div>
+            <h2 style={styles.modalTitle}>Tag this book</h2>
+            <p style={styles.previewSubtitle}>Select tags to organize your library.</p>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", margin: "16px 0", justifyContent: "center" }}>
+              {AVAILABLE_TAGS.map(tag => {
+                const isActive = (bookTags[tagModal.bookKey] || []).includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => toggleBookTag(tagModal.bookKey, tag)}
+                    style={{
+                      background: isActive ? "var(--accent-bg)" : "var(--card-bg)",
+                      border: isActive ? "1px solid var(--accent)" : "1px solid var(--border)",
+                      borderRadius: "16px",
+                      padding: "8px 16px",
+                      fontSize: "20px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={styles.previewActionRow}>
+              <button
+                type="button"
+                style={styles.authPrimaryButton}
+                onClick={closeTagModal}
+              >
+                Done
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -6573,7 +7037,7 @@ Important:
               </label>
             </div>
 
-            <div style={styles.previewActionRow}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "16px", paddingBottom: "40px" }}>
               <button
                 type="submit"
                 style={styles.authPrimaryButton}
@@ -6794,7 +7258,7 @@ Important:
                       bgImage: avatarBgImage
                     });
                     const cartoonUrl = "data:image/svg+xml;utf8," + encodeURIComponent(finalSvg);
-                    localStorage.setItem("profilePic_" + auth.currentUser.uid, cartoonUrl);
+                    localforage.setItem("profilePic_" + auth.currentUser.uid, cartoonUrl);
                     setUser((prev) => ({ ...prev, customPhotoURL: cartoonUrl }));
 
                     if (db) {
@@ -6860,6 +7324,54 @@ Important:
                 onClick={() => setSelectedLibraryCard(null)}
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {betaUnlockPopupOpen && (
+        <div style={styles.modal} onClick={() => setBetaUnlockPopupOpen(false)}>
+          <div style={{...styles.previewModalContent, textAlign: "center", padding: "40px 24px"}} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{...styles.modalTitle, fontSize: "24px", marginBottom: "16px"}}>✨ Premium Unlocked</h2>
+            <p style={{...styles.previewSubtitle, fontSize: "16px", lineHeight: "1.5", color: "var(--text)"}}>
+              Thanks for trying Lumina! Since you're an early beta tester, we've unlocked all premium features for you for FREE. Enjoy unlimited scans and premium cards!
+            </p>
+            <button
+              style={{...styles.closeButton, marginTop: "32px"}}
+              onClick={() => setBetaUnlockPopupOpen(false)}
+            >
+              Awesome, thanks!
+            </button>
+          </div>
+        </div>
+      )}
+
+      {scanLimitModalState && (
+        <div style={styles.modal} onClick={() => setScanLimitModalState(null)}>
+          <div style={{...styles.previewModalContent, textAlign: "center", padding: "40px 24px"}} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{...styles.modalTitle, fontSize: "24px", marginBottom: "16px"}}>
+              {scanLimitModalState === "login_required" ? "Free Scans Used ✨" : "Scan Limit Reached 🥺"}
+            </h2>
+            <p style={{...styles.previewSubtitle, fontSize: "16px", lineHeight: "1.5", color: "var(--text)"}}>
+              {scanLimitModalState === "login_required" 
+                ? "Whoa, you've used your 3 free daily scans! Create an account to score 10 free scans every single day. No pressure, just vibes! 🌙"
+                : "You've used all 10 of your free daily scans! Unlock Beta Plus for literally unlimited scanning. It's totally free for early beta testers! 🚀"}
+            </p>
+            <div style={{ display: "flex", gap: "12px", marginTop: "32px" }}>
+              <button
+                style={{...styles.closeButton, marginTop: 0, background: "transparent", color: "var(--text)", border: "1px solid var(--border)"}}
+                onClick={() => setScanLimitModalState(null)}
+              >
+                Close
+              </button>
+              <button
+                style={{...styles.closeButton, marginTop: 0}}
+                onClick={() => {
+                  setScanLimitModalState(null);
+                  setCurrentPage(scanLimitModalState === "login_required" ? "account" : "vibe");
+                }}
+              >
+                {scanLimitModalState === "login_required" ? "Log In" : "Unlock Beta Plus"}
               </button>
             </div>
           </div>
@@ -6939,6 +7451,7 @@ Important:
                       : {}),
                   }}
                   onClick={downloadPreviewDetails}
+                  disabled={previewModal.book && hasSavedPreview(previewModal.book)}
                 >
                   {previewModal.book && hasSavedPreview(previewModal.book)
                     ? "Saved Preview"
@@ -6958,10 +7471,13 @@ Important:
       )}
 
       <nav style={styles.bottomTabs} aria-label="App pages">
-        {[
-          ["scan", "⌕", "Scan", "#2563eb", "rgba(37, 99, 235, 0.13)"],
-          ["saved", "▤", "Saved", "#18794e", "rgba(24, 121, 78, 0.13)"],
-        ].map(([pageId, icon, label, accent, accentBg]) => {
+        <div style={styles.bottomTabsInner}>
+	        {[
+	          ["scan", "⌕", "Scan", "var(--accent)", "var(--accent-bg)"],
+	          ["vibe", "✦", "Vibe", "var(--accent)", "var(--accent-bg)"],
+	          ["discover", "✨", "Discover", "var(--accent)", "var(--accent-bg)"],
+	          ["saved", "▤", "Stash", "var(--accent)", "var(--accent-bg)"],
+	        ].map(([pageId, icon, label, accent, accentBg]) => {
           const isActive = currentPage === pageId;
 
           return (
@@ -6975,7 +7491,7 @@ Important:
                   ? {
                       ...styles.bottomTabButtonActive,
                       background: accentBg,
-                      border: `1px solid ${accent}`,
+	                      border: "1px solid var(--accent-border)",
                     }
                   : {}),
               }}
@@ -6986,7 +7502,9 @@ Important:
             </button>
           );
         })}
+        </div>
       </nav>
+      <ChatBox user={user} readingList={readingList} savedFiles={savedFiles} />
     </div>
   );
 }
@@ -6994,8 +7512,6 @@ Important:
 const styles = {
   page: {
     position: "relative",
-    isolation: "isolate",
-    overflowX: "hidden",
     minHeight: "100vh",
     width: "100%",
     boxSizing: "border-box",
@@ -7006,7 +7522,6 @@ const styles = {
       '"Google Sans Flex", "Google Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     background: "var(--bg)",
     color: "var(--text)",
-    backdropFilter: "blur(12px)",
     paddingBottom: "calc(140px + env(safe-area-inset-bottom))",
   },
   offlineBanner: {
@@ -7143,8 +7658,7 @@ const styles = {
     transition: "all 300ms ease",
   },
   hero: {
-    background:
-      "radial-gradient(circle at 16% 10%, rgba(37, 99, 235, 0.18), transparent 13rem), radial-gradient(circle at 86% 18%, rgba(245, 158, 11, 0.14), transparent 12rem), linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(239, 246, 255, 0.72) 56%, rgba(255, 255, 255, 0.9))",
+    background: "var(--social-bg)",
     borderRadius: "8px",
     padding: "clamp(22px, 6vw, 32px) clamp(16px, 5vw, 24px)",
     display: "flex",
@@ -7155,8 +7669,8 @@ const styles = {
     minWidth: 0,
     maxWidth: "100%",
     boxShadow: "0 28px 90px rgba(31, 45, 61, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.78)",
-    color: "#172033",
-    border: "1px solid rgba(37, 99, 235, 0.16)",
+    color: "var(--text-h)",
+    border: "1px solid var(--border)",
     backdropFilter: "blur(22px)",
   },
   heroText: {
@@ -7183,10 +7697,8 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    background:
-      "linear-gradient(145deg, rgba(37, 99, 235, 0.22), rgba(255, 255, 255, 0.92))",
-    boxShadow:
-      "0 0 0 1px rgba(230, 234, 240, 0.18), 0 12px 32px rgba(37, 99, 235, 0.28)",
+    background: "var(--code-bg)",
+    boxShadow: "0 0 0 1px var(--border), 0 12px 32px rgba(31, 45, 61, 0.12)",
     overflow: "hidden",
     flex: "0 0 auto",
   },
@@ -7197,7 +7709,7 @@ const styles = {
     width: "24px",
     height: "28px",
     borderRadius: "3px 7px 7px 3px",
-    background: "linear-gradient(135deg, #2563eb 0%, #18794e 100%)",
+    background: "var(--accent)",
     boxShadow: "inset 4px 0 0 rgba(255, 255, 255, 0.24)",
   },
   logoSpine: {
@@ -7216,7 +7728,7 @@ const styles = {
     width: "19px",
     height: "19px",
     borderRadius: "999px",
-    border: "3px solid #f59e0b",
+    border: "3px solid var(--accent)",
     background: "rgba(17, 18, 20, 0.7)",
   },
   logoBeam: {
@@ -7226,21 +7738,21 @@ const styles = {
     width: "18px",
     height: "4px",
     borderRadius: "999px",
-    background: "#dc2626",
+    background: "var(--accent)",
     transform: "rotate(43deg)",
     transformOrigin: "left center",
   },
   title: {
     margin: 0,
     fontSize: "clamp(28px, 6vw, 38px)",
-    color: "#172033",
+    color: "var(--text-h)",
     lineHeight: 1.15,
     wordBreak: "break-word",
     fontWeight: "650",
     letterSpacing: 0,
   },
   subtitle: {
-    color: "#4f5f73",
+    color: "var(--text)",
     fontSize: "16px",
     lineHeight: 1.5,
     marginTop: "12px",
@@ -7248,12 +7760,12 @@ const styles = {
   },
   homeSubtitleCollapse: {
     margin: "12px 0 0",
-    background: "rgba(255, 255, 255, 0.86)",
-    border: "1px solid rgba(37, 99, 235, 0.16)",
+    background: "var(--social-bg)",
+    border: "1px solid var(--border)",
   },
   homeSubtitleBody: {
     margin: 0,
-    color: "#4f5f73",
+    color: "var(--text)",
     fontSize: "14px",
     lineHeight: 1.45,
     textAlign: "left",
@@ -7266,23 +7778,22 @@ const styles = {
     width: "112px",
     height: "58px",
     borderRadius: "8px",
-    border: "1px solid rgba(37, 99, 235, 0.2)",
-    background:
-      "linear-gradient(135deg, rgba(255, 255, 255, 0.68), rgba(239, 246, 255, 0.72))",
-    color: "#243044",
+    border: "1px solid var(--border)",
+    background: "var(--code-bg)",
+    color: "var(--text-h)",
     fontSize: "14px",
     fontWeight: "650",
     flex: "0 0 auto",
     maxWidth: "100%",
     minWidth: 0,
-    boxShadow: "0 18px 44px rgba(37, 99, 235, 0.12)",
+    boxShadow: "0 18px 44px rgba(31, 45, 61, 0.08)",
   },
   heroNavButton: {
     width: "28px",
     height: "28px",
     borderRadius: "8px",
     border: "1px solid rgba(34, 49, 71, 0.08)",
-    background: "rgba(255, 255, 255, 0.7)",
+    background: "var(--code-bg)",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
@@ -7295,29 +7806,28 @@ const styles = {
     width: "12px",
     height: "12px",
     borderRadius: "999px",
-    background: "#2563eb",
-    boxShadow: "0 0 0 4px rgba(37, 99, 235, 0.14)",
+    background: "var(--accent)",
+    boxShadow: "0 0 0 4px var(--accent-bg)",
   },
   homeGreetingPanel: {
     margin: "18px 0 0",
     padding: "16px",
     borderRadius: "8px",
-    background:
-      "linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(232, 240, 254, 0.72))",
-    border: "1px solid rgba(37, 99, 235, 0.16)",
+    background: "var(--social-bg)",
+    border: "1px solid var(--border)",
     textAlign: "left",
     boxShadow: "0 18px 48px rgba(31, 45, 61, 0.08)",
   },
   homeGreetingTitle: {
     margin: 0,
-    color: "#172033",
+    color: "var(--text-h)",
     fontSize: "20px",
     lineHeight: 1.25,
     fontWeight: "750",
   },
   homeGreetingText: {
     margin: "6px 0 0",
-    color: "#4f5f73",
+    color: "var(--text)",
     fontSize: "14px",
     lineHeight: 1.45,
   },
@@ -7340,18 +7850,26 @@ const styles = {
   bottomTabs: {
     position: "fixed",
     left: 0,
+    right: 0,
     bottom: 0,
     width: "100%",
+    boxSizing: "border-box",
     minHeight: "78px",
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: "10px",
+    display: "flex",
+    justifyContent: "center",
     padding: "10px 16px max(12px, env(safe-area-inset-bottom))",
-    background: "rgba(255, 255, 255, 0.98)",
-    boxShadow: "0 -4px 24px rgba(31, 45, 61, 0.08)",
+    background: "var(--bg, rgba(255, 255, 255, 0.98))",
+    boxShadow: "0 -4px 24px rgba(0, 0, 0, 0.08)",
     backdropFilter: "blur(18px)",
-    borderTop: "1px solid rgba(34, 49, 71, 0.08)",
+    borderTop: "1px solid var(--border)",
     zIndex: 1200,
+  },
+  bottomTabsInner: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "10px",
+    width: "100%",
+    maxWidth: "1126px",
   },
   bottomTabButton: {
     minWidth: 0,
@@ -7364,14 +7882,14 @@ const styles = {
     borderRadius: "8px",
     border: "1px solid transparent",
     background: "transparent",
-    color: "#718096",
+    color: "var(--text, #718096)",
     cursor: "pointer",
     fontWeight: "780",
   },
   bottomTabButtonActive: {
-    border: "1px solid rgba(37, 99, 235, 0.24)",
-    background: "rgba(37, 99, 235, 0.12)",
-    color: "#1d4ed8",
+    border: "1px solid var(--accent-border)",
+    background: "var(--accent-bg)",
+    color: "var(--accent)",
   },
   bottomTabIcon: {
     fontSize: "31px",
@@ -7382,6 +7900,328 @@ const styles = {
     fontSize: "13px",
     lineHeight: 1.1,
     fontWeight: "800",
+  },
+  vibePage: {
+    display: "grid",
+    gap: "18px",
+    margin: "22px 0",
+  },
+  vibeHero: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
+    gap: "16px",
+    alignItems: "stretch",
+    padding: "18px",
+    borderRadius: "8px",
+    background: "var(--social-bg)",
+    border: "1px solid var(--border)",
+    boxShadow: "0 20px 46px rgba(31, 45, 61, 0.1)",
+  },
+  vibeKicker: {
+    display: "inline-flex",
+    marginBottom: "10px",
+    color: "var(--accent)",
+    fontSize: "12px",
+    fontWeight: "850",
+    textTransform: "uppercase",
+  },
+  vibeTitle: {
+    margin: 0,
+    color: "#172033",
+    fontSize: "26px",
+    lineHeight: 1.15,
+    fontWeight: "800",
+  },
+  vibeText: {
+    margin: "8px 0 0",
+    color: "#4f5f73",
+    fontSize: "14px",
+    lineHeight: 1.5,
+  },
+  vibeScoreCard: {
+    display: "grid",
+    alignContent: "center",
+    gap: "4px",
+    padding: "16px",
+    borderRadius: "8px",
+    background: "#172033",
+    color: "#ffffff",
+    textAlign: "left",
+    border: "1px solid rgba(37, 99, 235, 0.28)",
+    boxShadow: "0 0 0 1px rgba(37, 99, 235, 0.08) inset",
+  },
+  vibeScoreLabel: {
+    color: "rgba(255,255,255,0.72)",
+    fontSize: "12px",
+    fontWeight: "750",
+  },
+  vibeScoreValue: {
+    fontSize: "38px",
+    lineHeight: 1,
+  },
+  vibeScoreHint: {
+    color: "rgba(255,255,255,0.72)",
+    fontSize: "12px",
+    lineHeight: 1.35,
+  },
+  vibeGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+    gap: "16px",
+  },
+  vibeSection: {
+    padding: "16px",
+    borderRadius: "8px",
+    background: "var(--social-bg)",
+    border: "1px solid var(--border)",
+    boxShadow: "0 14px 34px rgba(31, 45, 61, 0.08)",
+    textAlign: "left",
+  },
+  themeSelectorPanel: {
+    padding: "16px",
+    borderRadius: "8px",
+    background: "var(--social-bg)",
+    border: "1px solid var(--border)",
+    boxShadow: "0 14px 34px rgba(31, 45, 61, 0.08)",
+    textAlign: "left",
+  },
+  themeSelectorCompact: {
+    borderTop: "1px solid var(--border)",
+    paddingTop: "12px",
+  },
+  themeSelectorHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px",
+    marginBottom: "12px",
+    flexWrap: "wrap",
+  },
+  themeSelectorTitle: {
+    margin: 0,
+    color: "var(--text-h)",
+    fontSize: "18px",
+    lineHeight: 1.2,
+    fontWeight: "780",
+  },
+  themeSelectorTitleSmall: {
+    margin: 0,
+    color: "var(--text-h)",
+    fontSize: "14px",
+    lineHeight: 1.2,
+    fontWeight: "750",
+  },
+  themeSelectorMeta: {
+    color: "var(--text)",
+    fontSize: "12px",
+    fontWeight: "750",
+  },
+  themeSelectorGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+    gap: "8px",
+  },
+  themeChoiceButton: {
+    minHeight: "42px",
+    padding: "9px 10px",
+    borderRadius: "8px",
+    border: "1px solid var(--border)",
+    background: "var(--code-bg)",
+    color: "var(--text-h)",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: "750",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    textAlign: "center",
+  },
+  themeChoiceButtonActive: {
+    border: "1px solid var(--accent)",
+    background: "var(--accent-bg)",
+    color: "var(--accent)",
+    boxShadow: "0 8px 18px rgba(31, 45, 61, 0.08)",
+  },
+  themeChoiceIcon: {
+    fontSize: "16px",
+    lineHeight: 1,
+  },
+  vibeSectionHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "12px",
+    flexWrap: "wrap",
+  },
+  vibeSectionTitle: {
+    margin: 0,
+    color: "var(--text-h)",
+    fontSize: "18px",
+    lineHeight: 1.25,
+    fontWeight: "780",
+  },
+  vibeMoodGrid: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
+    margin: "14px 0",
+  },
+  vibeMoodButton: {
+    minHeight: "36px",
+    padding: "8px 10px",
+    borderRadius: "8px",
+    border: "1px solid var(--border)",
+    background: "var(--code-bg)",
+    color: "var(--text-h)",
+    cursor: "pointer",
+    fontWeight: "750",
+    fontSize: "13px",
+  },
+  vibeMoodButtonActive: {
+    border: "1px solid var(--accent)",
+    background: "var(--accent-bg)",
+    color: "var(--accent)",
+  },
+  vibeShareCard: {
+    display: "grid",
+    gap: "10px",
+    padding: "18px",
+    borderRadius: "8px",
+    background: "#111827",
+    color: "#ffffff",
+    overflow: "hidden",
+  },
+  vibeCardEyebrow: {
+    color: "#f9a8d4",
+    fontSize: "12px",
+    fontWeight: "850",
+    textTransform: "uppercase",
+  },
+  vibeCardTitle: {
+    margin: 0,
+    fontSize: "28px",
+    lineHeight: 1.1,
+    fontWeight: "850",
+  },
+  vibeCardBody: {
+    margin: 0,
+    color: "rgba(255,255,255,0.84)",
+    fontSize: "15px",
+    lineHeight: 1.45,
+  },
+  vibeCardPrompt: {
+    margin: 0,
+    color: "#a7f3d0",
+    fontSize: "13px",
+    fontWeight: "750",
+  },
+  vibeBookStrip: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+  vibeBookPill: {
+    maxWidth: "100%",
+    padding: "7px 9px",
+    borderRadius: "999px",
+    background: "rgba(255,255,255,0.12)",
+    color: "#ffffff",
+    fontSize: "12px",
+    fontWeight: "750",
+    overflowWrap: "anywhere",
+  },
+  vibeShareText: {
+    width: "100%",
+    minHeight: "140px",
+    marginTop: "14px",
+    padding: "12px",
+    borderRadius: "8px",
+    border: "1px solid var(--border)",
+    background: "var(--code-bg)",
+    color: "var(--text-h)",
+    fontSize: "13px",
+    lineHeight: 1.45,
+    resize: "vertical",
+    boxSizing: "border-box",
+  },
+  vibeChecklistItem: {
+    display: "grid",
+    gridTemplateColumns: "24px minmax(0, 1fr)",
+    gap: "8px",
+    alignItems: "start",
+    marginTop: "12px",
+    color: "var(--text)",
+    fontSize: "14px",
+    lineHeight: 1.45,
+    fontWeight: "650",
+  },
+  vibeCheckDot: {
+    width: "22px",
+    height: "22px",
+    borderRadius: "999px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "var(--accent-bg)",
+    color: "var(--accent)",
+    fontWeight: "900",
+  },
+  vibeMonetizationRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    padding: "10px 0",
+    borderBottom: "1px solid var(--border)",
+    color: "var(--text)",
+    fontSize: "14px",
+  },
+  vibePlanGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
+    gap: "14px",
+    marginTop: "14px",
+  },
+  vibePlanCard: {
+    display: "grid",
+    gap: "12px",
+    padding: "14px",
+    borderRadius: "8px",
+    border: "1px solid var(--border)",
+    background: "var(--code-bg)",
+  },
+  vibePlanCardActive: {
+    border: "1px solid var(--accent)",
+    boxShadow: "0 12px 30px rgba(31, 45, 61, 0.1)",
+  },
+  vibePlanTitle: {
+    margin: 0,
+    color: "var(--text-h)",
+    fontSize: "17px",
+    fontWeight: "800",
+  },
+  vibePlanPrice: {
+    color: "var(--accent)",
+    fontSize: "16px",
+    whiteSpace: "nowrap",
+  },
+  vibePerkList: {
+    margin: 0,
+    paddingLeft: "18px",
+    color: "var(--text)",
+    fontSize: "13px",
+    lineHeight: 1.6,
+    fontWeight: "650",
+  },
+  vibeStatus: {
+    margin: 0,
+    padding: "12px",
+    borderRadius: "8px",
+    border: "1px solid var(--accent-border)",
+    background: "var(--accent-bg)",
+    color: "var(--text-h)",
+    fontSize: "13px",
+    fontWeight: "750",
   },
   folderToolbar: {
     display: "grid",
@@ -7411,9 +8251,9 @@ const styles = {
     whiteSpace: "normal",
   },
   navButtonActive: {
-    background: "rgba(37, 99, 235, 0.18)",
-    border: "1px solid rgba(37, 99, 235, 0.42)",
-    color: "#1d4ed8",
+    background: "var(--accent-bg)",
+    border: "1px solid var(--accent-border)",
+    color: "var(--accent)",
   },
   cameraButton: {
     flex: "1 1 min(100%, 150px)",
@@ -7531,9 +8371,9 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "rgba(37, 99, 235, 0.18)",
-    color: "#1d4ed8",
-    border: "1px solid rgba(37, 99, 235, 0.32)",
+    background: "var(--accent-bg)",
+    color: "var(--accent)",
+    border: "1px solid var(--accent-border)",
     fontSize: "12px",
     fontWeight: "750",
   },
@@ -7656,6 +8496,21 @@ const styles = {
     cursor: "pointer",
     fontWeight: "700",
   },
+  appleSignInButton: {
+    minHeight: "42px",
+    padding: "9px 14px",
+    borderRadius: "8px",
+    border: "1px solid var(--border)",
+    background: "var(--social-bg)",
+    color: "var(--text-h)",
+    cursor: "pointer",
+    fontWeight: "750",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+    boxShadow: "0 8px 20px rgba(31, 45, 61, 0.08)",
+  },
   googleSignInButton: {
     minHeight: "42px",
     padding: "9px 14px",
@@ -7678,9 +8533,8 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    color: "#2563eb",
-    background:
-      "conic-gradient(from 0deg, #2563eb, #18794e, #f59e0b, #dc2626, #2563eb)",
+    color: "var(--accent)",
+    background: "var(--accent)",
     WebkitBackgroundClip: "text",
     backgroundClip: "text",
     fontSize: "18px",
@@ -7691,7 +8545,7 @@ const styles = {
     padding: "6px 0",
     border: "none",
     background: "transparent",
-    color: "#2563eb",
+    color: "var(--accent)",
     cursor: "pointer",
     fontWeight: "700",
     textAlign: "left",
@@ -7715,9 +8569,9 @@ const styles = {
     margin: "12px 0 0",
     padding: "10px 12px",
     borderRadius: "8px",
-    border: "1px solid rgba(24, 121, 78, 0.34)",
-    background: "rgba(24, 121, 78, 0.12)",
-    color: "#18794e",
+    border: "1px solid var(--accent-border)",
+    background: "var(--accent-bg)",
+    color: "var(--text-h)",
     fontSize: "13px",
     fontWeight: "650",
   },
@@ -7755,8 +8609,8 @@ const styles = {
     gap: "12px",
     padding: "12px",
     borderRadius: "8px",
-    background: "rgba(34, 49, 71, 0.05)",
-    border: "1px solid rgba(34, 49, 71, 0.1)",
+    background: "var(--code-bg)",
+    border: "1px solid var(--border)",
   },
   walletAddIcon: {
     width: "38px",
@@ -7765,7 +8619,7 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "#2563eb",
+    background: "var(--accent)",
     color: "#ffffff",
     fontSize: "24px",
     fontWeight: "700",
@@ -7773,7 +8627,7 @@ const styles = {
   },
   walletAddTitle: {
     margin: 0,
-    color: "#172033",
+    color: "var(--text-h)",
     fontSize: "16px",
     lineHeight: 1.2,
   },
@@ -7789,11 +8643,10 @@ const styles = {
     boxSizing: "border-box",
     padding: "18px",
     borderRadius: "8px",
-    background:
-      "linear-gradient(135deg, #ffffff 0%, #eef5ff 52%, #f8fafc 100%)",
-    border: "1px solid rgba(34, 49, 71, 0.14)",
+    background: "var(--code-bg)",
+    border: "1px solid var(--border)",
     boxShadow: "0 18px 38px rgba(31, 45, 61, 0.13)",
-    color: "#172033",
+    color: "var(--text-h)",
     cursor: "pointer",
     overflow: "hidden",
     textAlign: "left",
@@ -7804,12 +8657,11 @@ const styles = {
     top: 0,
     bottom: 0,
     width: "8px",
-    background:
-      "linear-gradient(180deg, #2563eb, #1d4ed8 54%, #18794e)",
+    background: "var(--accent)",
   },
   walletEyebrow: {
     margin: "0 0 18px",
-    color: "#5f6f86",
+    color: "var(--text)",
     fontSize: "12px",
     fontWeight: "750",
     textTransform: "uppercase",
@@ -7817,7 +8669,7 @@ const styles = {
   },
   walletMaskedNumber: {
     margin: "18px 0 0",
-    color: "#243044",
+    color: "var(--text-h)",
     fontSize: "15px",
     fontWeight: "700",
     fontFamily: "ui-monospace, Consolas, monospace",
@@ -7826,7 +8678,7 @@ const styles = {
     position: "absolute",
     right: "14px",
     bottom: "12px",
-    color: "#2563eb",
+    color: "var(--accent)",
     fontSize: "13px",
     fontWeight: "750",
   },
@@ -7837,7 +8689,7 @@ const styles = {
   },
   libraryCardName: {
     margin: 0,
-    color: "#172033",
+    color: "var(--text-h)",
     fontSize: "22px",
     lineHeight: 1.2,
     overflowWrap: "anywhere",
@@ -7945,13 +8797,13 @@ const styles = {
     alignItems: "center",
     justifyContent: "flex-end",
     gap: "8px",
-    color: "#718096",
+    color: "var(--text)",
     fontSize: "12px",
     fontWeight: "750",
     whiteSpace: "nowrap",
   },
   collapsibleChevron: {
-    color: "#2563eb",
+    color: "var(--accent)",
     fontSize: "11px",
   },
   collapsibleCloseButton: {
@@ -7960,9 +8812,9 @@ const styles = {
     alignSelf: "center",
     marginRight: "10px",
     borderRadius: "6px",
-    border: "1px solid rgba(34, 49, 71, 0.14)",
-    background: "#ffffff",
-    color: "#172033",
+    border: "1px solid var(--border)",
+    background: "var(--social-bg)",
+    color: "var(--text-h)",
     cursor: "pointer",
     fontSize: "16px",
     fontWeight: "800",
@@ -7983,9 +8835,9 @@ const styles = {
     minHeight: "38px",
     padding: "8px 12px",
     borderRadius: "8px",
-    border: "1px solid rgba(37, 99, 235, 0.42)",
-    background: "rgba(37, 99, 235, 0.18)",
-    color: "#1d4ed8",
+    border: "1px solid var(--accent-border)",
+    background: "var(--accent-bg)",
+    color: "var(--text-h)",
     textDecoration: "none",
     cursor: "pointer",
     fontWeight: "750",
@@ -8000,25 +8852,25 @@ const styles = {
   developerStatCard: {
     padding: "12px",
     borderRadius: "8px",
-    border: "1px solid rgba(34, 49, 71, 0.1)",
-    background: "#f6f8fb",
+    border: "1px solid var(--border)",
+    background: "var(--code-bg)",
   },
   developerStatLabel: {
     display: "block",
-    color: "#718096",
+    color: "var(--text)",
     fontSize: "12px",
     fontWeight: "750",
     marginBottom: "6px",
   },
   developerStatValue: {
     display: "block",
-    color: "#172033",
+    color: "var(--text-h)",
     fontSize: "28px",
     lineHeight: 1.1,
   },
   developerStatValueSmall: {
     display: "block",
-    color: "#172033",
+    color: "var(--text-h)",
     fontSize: "14px",
     lineHeight: 1.3,
     overflowWrap: "anywhere",
@@ -8030,7 +8882,7 @@ const styles = {
   developerIpRow: {
     display: "grid",
     gap: "3px",
-    color: "#172033",
+    color: "var(--text-h)",
     fontSize: "13px",
     lineHeight: 1.3,
     overflowWrap: "anywhere",
@@ -8078,7 +8930,7 @@ const styles = {
   },
   loading: {
     fontWeight: "600",
-    color: "#2563eb",
+    color: "var(--accent)",
   },
   processingOverlay: {
     position: "fixed",
@@ -8638,7 +9490,10 @@ const styles = {
   },
   modal: {
     position: "fixed",
-    inset: 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     background: "rgba(0, 0, 0, 0.72)",
     display: "flex",
     alignItems: "flex-start",
@@ -8646,7 +9501,7 @@ const styles = {
     padding: "20px",
     overflowY: "auto",
     overflowX: "hidden",
-    zIndex: 1000,
+    zIndex: 2000,
   },
   modalContent: {
     background: "#ffffff",
@@ -8657,6 +9512,7 @@ const styles = {
     boxSizing: "border-box",
     boxShadow: "0 28px 70px rgba(31, 45, 61, 0.18)",
     color: "#5f6f86",
+    margin: "auto",
   },
   compareModalContent: {
     background: "#ffffff",
@@ -8665,13 +9521,13 @@ const styles = {
     maxWidth: "760px",
     width: "min(100%, 760px)",
     boxSizing: "border-box",
-    maxHeight: "88vh",
+    maxHeight: "none",
     boxShadow: "0 28px 70px rgba(31, 45, 61, 0.18)",
     color: "#5f6f86",
     border: "1px solid #dde5f0",
-    overflow: "hidden",
     display: "flex",
     flexDirection: "column",
+    margin: "auto",
   },
   previewModalContent: {
     background: "#ffffff",
@@ -8680,11 +9536,12 @@ const styles = {
     maxWidth: "900px",
     width: "100%",
     boxSizing: "border-box",
-    maxHeight: "92vh",
+    maxHeight: "none",
     boxShadow: "0 28px 70px rgba(31, 45, 61, 0.18)",
     color: "#5f6f86",
     border: "1px solid #dde5f0",
-    overflow: "auto",
+    overflow: "visible",
+    margin: "auto",
   },
   promptModalContent: {
     background: "var(--social-bg)",
@@ -8697,6 +9554,8 @@ const styles = {
     color: "var(--text-h)",
     border: "1px solid var(--border)",
     textAlign: "left",
+    maxHeight: "92vh",
+    overflowY: "auto",
   },
   promptIcon: {
     width: "54px",

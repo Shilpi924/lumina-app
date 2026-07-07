@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import {
   initializeAppCheck,
-  ReCaptchaV3Provider,
+  ReCaptchaEnterpriseProvider,
 } from "firebase/app-check";
 import { getAnalytics, logEvent as firebaseLogEvent } from "firebase/analytics";
 import { getAuth } from "firebase/auth";
@@ -40,8 +40,11 @@ try {
     cloudFunctions = getFunctions(app, "us-central1");
 
     if (import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY) {
+      if (import.meta.env.DEV || window.location.hostname === "localhost") {
+      }
+
       appCheck = initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider(
+        provider: new ReCaptchaEnterpriseProvider(
           import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY
         ),
         isTokenAutoRefreshEnabled: true,
