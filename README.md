@@ -287,8 +287,8 @@ To run Lumina locally, follow these steps:
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/Shilpi924/BookCompass-app-new.git
-   cd BookCompass-app-new
+   git clone https://github.com/Shilpi924/lumina-app.git
+   cd lumina-app
    ```
 
 2. **Install dependencies:**
