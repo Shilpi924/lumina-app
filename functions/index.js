@@ -7,10 +7,24 @@ admin.initializeApp();
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
 const googleBooksApiKey = defineSecret('GOOGLE_BOOKS_API_KEY');
-const claudeModel = defineString('CLAUDE_MODEL', {
+const geminiCheapModel = defineString('GEMINI_MODEL_CHEAP', {
+  default: 'gemini-2.5-flash-lite',
+});
+const geminiBalancedModel = defineString('GEMINI_MODEL_BALANCED', {
+  default: 'gemini-2.5-flash',
+});
+const geminiStrongModel = defineString('GEMINI_MODEL_STRONG', {
+  default: 'gemini-2.5-pro',
+});
+const claudeCheapModel = defineString('CLAUDE_MODEL_CHEAP', {
   default: 'claude-sonnet-4-5',
 });
-const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+const claudeBalancedModel = defineString('CLAUDE_MODEL_BALANCED', {
+  default: 'claude-sonnet-4-5',
+});
+const claudeStrongModel = defineString('CLAUDE_MODEL_STRONG', {
+  default: 'claude-sonnet-4-5',
+});
 const API_USAGE_COLLECTION = 'developerApiUsage';
 const API_USAGE_EVENTS_COLLECTION = 'developerApiUsageEvents';
 const GEMINI_QUOTA_COLLECTION = 'geminiQuotaStatus';
@@ -26,6 +40,112 @@ function getTodayKey() {
 
 function getTokenCount(result, key) {
   return Number(result?.usageMetadata?.[key] || 0);
+}
+
+function getInputCharCount(contents = []) {
+  return (contents || []).reduce((total, content) => {
+    return total + (content?.parts || []).reduce((partTotal, part) => {
+      return partTotal + String(part?.text || '').length;
+    }, 0);
+  }, 0);
+}
+
+function hasInlineImages(contents = []) {
+  return (contents || []).some((content) =>
+    (content?.parts || []).some((part) => Boolean(part?.inlineData?.data))
+  );
+}
+
+function normalizeRoutingHints(rawRouting = {}) {
+  return {
+    modelTier: String(rawRouting?.modelTier || '').toLowerCase(),
+    complexityHint: String(rawRouting?.complexityHint || '').toLowerCase(),
+    budgetPriority: String(rawRouting?.budgetPriority || '').toLowerCase(),
+    requiresVision: Boolean(rawRouting?.requiresVision),
+    requiresJson: Boolean(rawRouting?.requiresJson),
+  };
+}
+
+function getGeminiModelForTier(modelTier) {
+  if (modelTier === 'cheap') return geminiCheapModel.value();
+  if (modelTier === 'strong') return geminiStrongModel.value();
+  return geminiBalancedModel.value();
+}
+
+function getClaudeModelForTier(modelTier) {
+  if (modelTier === 'cheap') return claudeCheapModel.value();
+  if (modelTier === 'strong') return claudeStrongModel.value();
+  return claudeBalancedModel.value();
+}
+
+function selectModelRoute({ contents, generationConfig = {}, callType = 'AI call', routing = {} }) {
+  const normalizedRouting = normalizeRoutingHints(routing);
+  const inputCharCount = getInputCharCount(contents);
+  const includesImage = hasInlineImages(contents) || normalizedRouting.requiresVision;
+  const maxOutputTokens = Number(generationConfig?.maxOutputTokens || 0);
+  const normalizedCallType = String(callType || '').toLowerCase();
+
+  if (['cheap', 'balanced', 'strong'].includes(normalizedRouting.modelTier)) {
+    return {
+      modelTier: normalizedRouting.modelTier,
+      routeReason: 'explicit-tier-override',
+      inputCharCount,
+      includesImage,
+      maxOutputTokens,
+    };
+  }
+
+  if (includesImage || normalizedCallType.includes('scan')) {
+    return {
+      modelTier: 'strong',
+      routeReason: includesImage ? 'vision-input' : 'scan-call-type',
+      inputCharCount,
+      includesImage,
+      maxOutputTokens,
+    };
+  }
+
+  if (
+    normalizedCallType === 'chat' &&
+    normalizedRouting.budgetPriority === 'low_cost' &&
+    inputCharCount <= 2500 &&
+    maxOutputTokens <= 512
+  ) {
+    return {
+      modelTier: 'cheap',
+      routeReason: 'low-cost-chat',
+      inputCharCount,
+      includesImage,
+      maxOutputTokens,
+    };
+  }
+
+  if (
+    normalizedRouting.complexityHint === 'complex' ||
+    maxOutputTokens > 1800 ||
+    inputCharCount > 6000
+  ) {
+    return {
+      modelTier: 'strong',
+      routeReason:
+        normalizedRouting.complexityHint === 'complex'
+          ? 'complexity-hint'
+          : maxOutputTokens > 1800
+            ? 'large-output-request'
+            : 'large-input-request',
+      inputCharCount,
+      includesImage,
+      maxOutputTokens,
+    };
+  }
+
+  return {
+    modelTier: 'balanced',
+    routeReason: normalizedRouting.requiresJson ? 'structured-json-request' : 'default-balanced',
+    inputCharCount,
+    includesImage,
+    maxOutputTokens,
+  };
 }
 
 function getProviderErrorMessage(provider, response) {
@@ -130,12 +250,6 @@ function isQuotaError(status, result) {
   );
 }
 
-// Keep for backwards compatibility
-function shouldUseClaudeFallback(status, result) {
-  return isQuotaError(status, result);
-}
-
-
 function toAnthropicContent(contents, callType) {
   const contentBlocks = [];
 
@@ -202,7 +316,20 @@ function normalizeClaudeResult(result, model) {
   };
 }
 
-async function saveGlobalUsage({ auth, callType, status, result, provider, model, ipAddress, durationMs }) {
+async function saveGlobalUsage({
+  auth,
+  callType,
+  status,
+  result,
+  provider,
+  model,
+  modelTier = '',
+  routeReason = '',
+  ipAddress,
+  durationMs,
+  inputCharCount = 0,
+  includesImage = false,
+}) {
   if (!auth?.uid) return;
 
   const db = admin.firestore();
@@ -218,10 +345,14 @@ async function saveGlobalUsage({ auth, callType, status, result, provider, model
     status,
     provider,
     model,
+    modelTier,
+    routeReason,
     promptTokens,
     outputTokens,
     totalTokens,
     durationMs: durationMs || 0,
+    inputCharCount: Number(inputCharCount || 0),
+    includesImage: Boolean(includesImage),
     userId: auth.uid,
     userEmail,
     ipAddress: ipAddress || 'Unknown IP',
@@ -243,6 +374,8 @@ async function saveGlobalUsage({ auth, callType, status, result, provider, model
         lastStatus: status,
         lastProvider: provider,
         lastModel: model,
+        lastModelTier: modelTier,
+        lastRouteReason: routeReason,
         lastUserEmail: userEmail,
         lastIpAddress: ipAddress || 'Unknown IP',
         lastDurationMs: durationMs || 0,
@@ -253,14 +386,14 @@ async function saveGlobalUsage({ auth, callType, status, result, provider, model
   ]);
 }
 
-async function callGemini({ contents, generationConfig }) {
+async function callGemini({ contents, generationConfig, model }) {
   const apiKey = geminiApiKey.value();
   if (!apiKey) {
     throw new HttpsError('failed-precondition', 'Gemini API key is not configured.');
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -276,16 +409,15 @@ async function callGemini({ contents, generationConfig }) {
     result = undefined;
   }
 
-  return { ok: response.ok, status: response.status, result };
+  return { ok: response.ok, status: response.status, result, model };
 }
 
-async function callClaude({ contents, generationConfig }) {
+async function callClaude({ contents, generationConfig, model }) {
   const apiKey = anthropicApiKey.value();
   if (!apiKey) {
     throw new HttpsError('failed-precondition', 'Claude API key is not configured.');
   }
 
-  const model = claudeModel.value();
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -331,7 +463,7 @@ export const generateGeminiContent = onCall(
     minInstances: 1,
   },
   async (request) => {
-    const { contents, generationConfig = {}, callType = 'AI call' } = request.data || {};
+    const { contents, generationConfig = {}, callType = 'AI call', routing = {} } = request.data || {};
 
     if (!request.auth?.uid && callType !== 'Chat') {
       throw new HttpsError('unauthenticated', 'Sign in to use AI scanning.');
@@ -339,6 +471,9 @@ export const generateGeminiContent = onCall(
 
 
     const ipAddress = getRequestIp(request);
+    const route = selectModelRoute({ contents, generationConfig, callType, routing });
+    const geminiModel = getGeminiModelForTier(route.modelTier);
+    const claudeModelName = getClaudeModelForTier(route.modelTier);
 
     if (!Array.isArray(contents) || contents.length === 0) {
       throw new HttpsError('invalid-argument', 'AI contents are required.');
@@ -350,7 +485,7 @@ export const generateGeminiContent = onCall(
     if (!quotaAlreadyExhausted) {
       // ── Step 2: Try Gemini first ─────────────────────────────────────────
       const geminiStartTime = Date.now();
-      const gemini = await callGemini({ contents, generationConfig });
+      const gemini = await callGemini({ contents, generationConfig, model: geminiModel });
       const geminiDurationMs = Date.now() - geminiStartTime;
 
       if (gemini.ok) {
@@ -360,11 +495,21 @@ export const generateGeminiContent = onCall(
           status: 'Success',
           result: gemini.result,
           provider: 'gemini',
-          model: GEMINI_MODEL,
+          model: gemini.model,
+          modelTier: route.modelTier,
+          routeReason: route.routeReason,
           ipAddress,
           durationMs: geminiDurationMs,
+          inputCharCount: route.inputCharCount,
+          includesImage: route.includesImage,
         });
-        return { ...gemini.result, provider: 'gemini', model: GEMINI_MODEL };
+        return {
+          ...gemini.result,
+          provider: 'gemini',
+          model: gemini.model,
+          modelTier: route.modelTier,
+          routeReason: route.routeReason,
+        };
       }
 
       // ── Step 3: Gemini failed — record it, fall through to Claude ────────
@@ -376,9 +521,13 @@ export const generateGeminiContent = onCall(
         status: 'Failed',
         result: gemini.result,
         provider: 'gemini',
-        model: GEMINI_MODEL,
+        model: gemini.model,
+        modelTier: route.modelTier,
+        routeReason: route.routeReason,
         ipAddress,
         durationMs: geminiDurationMs,
+        inputCharCount: route.inputCharCount,
+        includesImage: route.includesImage,
       });
 
       // If this was a quota error, flag it so all subsequent calls today skip Gemini
@@ -394,7 +543,11 @@ export const generateGeminiContent = onCall(
 
     // ── Step 4: Call Claude (fallback or direct) ─────────────────────────────
     const claudeStartTime = Date.now();
-    const claude = await callClaude({ contents, generationConfig: { ...generationConfig, _callType: callType } });
+    const claude = await callClaude({
+      contents,
+      generationConfig: { ...generationConfig, _callType: callType },
+      model: claudeModelName,
+    });
     const claudeDurationMs = Date.now() - claudeStartTime;
 
     if (!claude.ok) {
@@ -404,9 +557,13 @@ export const generateGeminiContent = onCall(
         status: 'Failed',
         result: claude.result,
         provider: 'claude',
-        model: claude.model || claudeModel.value(),
+        model: claude.model || claudeModelName,
+        modelTier: route.modelTier,
+        routeReason: `${route.routeReason}:${quotaAlreadyExhausted ? 'gemini-quota-daily-skip' : 'gemini-failed-fallback'}`,
         ipAddress,
         durationMs: claudeDurationMs,
+        inputCharCount: route.inputCharCount,
+        includesImage: route.includesImage,
       });
       throw new HttpsError(
         getProviderErrorCode(claude.status),
@@ -421,12 +578,23 @@ export const generateGeminiContent = onCall(
       result: claude.result,
       provider: 'claude',
       model: claude.model,
+      modelTier: route.modelTier,
+      routeReason: `${route.routeReason}:${quotaAlreadyExhausted ? 'gemini-quota-daily-skip' : 'gemini-failed-fallback'}`,
       ipAddress,
       durationMs: claudeDurationMs,
+      inputCharCount: route.inputCharCount,
+      includesImage: route.includesImage,
     });
 
     const routeReason = quotaAlreadyExhausted ? 'gemini-quota-daily-skip' : 'gemini-failed-fallback';
-    return { ...claude.result, fallbackFrom: routeReason };
+    return {
+      ...claude.result,
+      fallbackFrom: routeReason,
+      modelTier: route.modelTier,
+      routeReason: route.routeReason,
+      provider: 'claude',
+      model: claude.model,
+    };
   }
 );
 

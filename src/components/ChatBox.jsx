@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { httpsCallable } from 'firebase/functions';
 import { Capacitor, registerPlugin } from "@capacitor/core";
@@ -23,13 +23,13 @@ function getAIResponseText(result) {
     if (parsed && typeof parsed === 'object') {
       text = parsed.text || parsed.message || parsed.response || parsed.reply || Object.values(parsed).filter(v => typeof v === 'string').join('\n') || text;
     }
-  } catch (e) {
+  } catch {
     // Not JSON, which is fine
   }
   return text;
 }
 
-export default function ChatBox({ user, readingList, savedFiles }) {
+export default function ChatBox({ readingList }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     { role: 'model', text: 'Hi! I am Lumina, your virtual librarian. 📚 How can I help you find your next read?' }
@@ -142,7 +142,17 @@ export default function ChatBox({ user, readingList, savedFiles }) {
       ];
 
       const callable = httpsCallable(cloudFunctions, "generateGeminiContent");
-      const response = await callable({ contents, callType: "Chat" });
+      const response = await callable({
+        contents,
+        callType: "Chat",
+        generationConfig: {
+          maxOutputTokens: 320,
+        },
+        routing: {
+          budgetPriority: "low_cost",
+          complexityHint: "simple",
+        },
+      });
       
       const botResponse = getAIResponseText(response.data);
 

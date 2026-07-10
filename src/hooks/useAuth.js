@@ -530,6 +530,7 @@ export function useAuth({ setCurrentPage }) {
     authMessage,
     setAuthMessage,
     authLoading,
+    setAuthLoading,
     handleAuthSubmit,
     handleGoogleLogin,
     handleAppleLogin,

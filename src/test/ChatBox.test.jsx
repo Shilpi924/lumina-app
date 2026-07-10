@@ -122,4 +122,34 @@ describe('ChatBox Component', () => {
 
     expect(mockCallable).toHaveBeenCalled();
   });
+
+  it('routes chat requests with low-cost hints', async () => {
+    const mockCallable = vi.fn().mockResolvedValue({
+      data: { text: 'Cheap route response' }
+    });
+    httpsCallable.mockReturnValue(mockCallable);
+
+    render(<ChatBox readingList={[]} />);
+    fireEvent.click(screen.getByText('✨ Chat'));
+
+    fireEvent.change(screen.getByPlaceholderText('Ask about books...'), {
+      target: { value: 'Quick recommendation please' }
+    });
+    fireEvent.click(screen.getByText('➤'));
+
+    await waitFor(() => {
+      expect(mockCallable).toHaveBeenCalledWith(
+        expect.objectContaining({
+          callType: 'Chat',
+          generationConfig: expect.objectContaining({
+            maxOutputTokens: 320,
+          }),
+          routing: expect.objectContaining({
+            budgetPriority: 'low_cost',
+            complexityHint: 'simple',
+          }),
+        })
+      );
+    });
+  });
 });

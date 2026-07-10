@@ -21,13 +21,18 @@ export function getGeminiText(result) {
   );
 }
 
-export async function generateGeminiContent(contents, generationConfig = {}, callType = "Gemini call") {
+export async function generateGeminiContent(
+  contents,
+  generationConfig = {},
+  callType = "Gemini call",
+  routing = {}
+) {
   if (!cloudFunctions) {
     throw new Error("Firebase Functions is not configured.");
   }
 
   const callable = httpsCallable(cloudFunctions, "generateGeminiContent");
-  const response = await callable({ contents, generationConfig, callType });
+  const response = await callable({ contents, generationConfig, callType, routing });
 
   return response.data;
 }

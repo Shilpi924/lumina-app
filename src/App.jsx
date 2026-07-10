@@ -14,12 +14,9 @@ import {
 } from "./utils/stringUtils";
 import {
   APP_STATE_DOC,
-  API_USAGE_COLLECTION,
   getUserAppStateRef,
   saveUserAppState,
   saveUserScan,
-  getDeveloperUsageRef,
-  recordSuccessfulLogin,
 } from "./services/firebaseService";
 import {
   getPromptTokenCount,
@@ -30,53 +27,21 @@ import {
 } from "./services/geminiService";
 import { useDeveloper, hasDeveloperAccess } from "./hooks/useDeveloper";
 import { useAuth } from "./hooks/useAuth";
-import { useLibrary } from "./hooks/useLibrary";
-import { useAppUI, SECTION_DEFAULT_OPEN } from "./hooks/useAppUI";
+import { DEFAULT_FOLDERS, useLibrary } from "./hooks/useLibrary";
+import { useAppUI } from "./hooks/useAppUI";
 import { useScan } from "./hooks/useScan";
-import {
-  isValidEmail,
-  validatePassword,
-  validateDisplayName,
-  BLOCKED_NAME_TERMS
-} from "./utils/validationUtils";
 import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
-import { Filesystem, Directory } from '@capacitor/filesystem';
-import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import {
-  createUserWithEmailAndPassword,
-  getRedirectResult,
-  GoogleAuthProvider,
-  OAuthProvider,
-  onAuthStateChanged,
-  reload,
-  sendEmailVerification,
-  sendPasswordResetEmail,
   signInAnonymously,
-  signInWithCredential,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signInWithRedirect,
-  signOut,
-  updateProfile,
 } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
 import {
-  addDoc,
-  collection,
   doc,
-  getCountFromServer,
   getDoc,
-  getDocs,
-  increment,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
   serverTimestamp,
   setDoc,
-  where,
 } from "firebase/firestore";
 import {
   analytics,
@@ -89,22 +54,26 @@ import {
 import ChatBox from "./components/ChatBox";
 import { Purchases, LOG_LEVEL } from "@revenuecat/purchases-capacitor";
 import localforage from "localforage";
-import { BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
+import { BarcodeFormat, BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
+import playStoreLogo from "../play-store-assets/app-icon-512.png";
 const IS_BETA_MODE = true;
 
-const googleBooksApiKey = import.meta.env.GOOGLE_BOOKS_API_KEY;
 const firebaseProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || "lumina-kaboom";
 const firestoreConsoleUrl = `https://console.firebase.google.com/project/${firebaseProjectId}/firestore/databases/-default-/data/~2Fusers`;
 const firebaseAuthConsoleUrl = `https://console.firebase.google.com/project/${firebaseProjectId}/authentication/users`;
 const isNativeApp = Capacitor.isNativePlatform();
 const isAndroidApp = Capacitor.getPlatform() === "android";
 const NativeSpeech = registerPlugin("NativeSpeech");
-const LuminaPurchases = registerPlugin("LuminaPurchases");
-const hasNativeFirebaseAuthentication = Capacitor.isPluginAvailable("FirebaseAuthentication");
-const hasNativePurchases = Capacitor.isPluginAvailable("LuminaPurchases");
+const hasNativeSpeech = Capacitor.isPluginAvailable("NativeSpeech");
 const isAndroidGoogleSsoConfigured =
   import.meta.env.VITE_ANDROID_GOOGLE_SSO_READY === "true";
 const isGeminiConfigured = isFirebaseConfigured;
+const BOOK_BARCODE_FORMATS = [
+  BarcodeFormat.Ean13,
+  BarcodeFormat.Ean8,
+  BarcodeFormat.UpcA,
+  BarcodeFormat.UpcE,
+];
 const MODEL_NAME = "gemini-2.5-flash-lite";
 const GOOGLE_BOOKS_PREVIEW_TIMEOUT_MS = 10000;
 const GOOGLE_BOOKS_PREVIEW_STALE_MS = GOOGLE_BOOKS_PREVIEW_TIMEOUT_MS + 3000;
@@ -131,55 +100,6 @@ const FILTER_OPTIONS = {
   gradeBand: ["K-3", "4-6", "7-9", "10-12", "Adult"],
   ageRecommendation: ["All ages", "Ages 5+", "Ages 8+", "Ages 12+", "Ages 14+", "Ages 18+"],
 };
-const VIBE_MOODS = ["Main character", "Cozy reset", "Academic chaos", "Dark romance", "Plot twist"];
-const VIBE_PERSONAS = [
-  {
-    label: "Soft Scholar",
-    match: "You collect comfort, cleverness, and books that look like they know a secret.",
-    prompt: "Post this when your shelf says: gentle brain, dramatic taste.",
-    insight: "Your shelf doesn't just hold books — it holds moods. You reach for stories the way others reach for a blanket. Intentional. A little selective. Quietly intense.",
-    blindspot: "You start books in three genres at once and somehow finish none of them before starting a fourth. It's a system.",
-    signal: "People ask you for book recommendations because your taste is eerily accurate. You've never recommended something bad. Ever.",
-    confession: "You've definitely re-read the same comfort book this year already. No shame. That's the whole point.",
-  },
-  {
-    label: "Plot Twist Romantic",
-    match: "Your shelf wants yearning, sharp banter, and at least one emotional emergency.",
-    prompt: "Post this when your friends need to know your reading life is not calm.",
-    insight: "You read for the feeling. Not just the story — the specific, specific feeling. The slow burn. The almost-kiss that doesn't land until page 300. You know what you came for.",
-    blindspot: "You say you're 'fine' mid-book. You are not fine. There are emotions happening. Your face is telling on you.",
-    signal: "You've highlighted sentences that hit differently at 11pm. Your notes app has quotes that sound unhinged out of context.",
-    confession: "At least one book has made you put it down and stare at the ceiling. You gave it five stars and immediately recommended it to someone you wanted to emotionally wreck.",
-  },
-  {
-    label: "Library Main Character",
-    match: "You read like every aisle is a cinematic universe and every cover is a clue.",
-    prompt: "Post this when your bookshelf deserves its own close-up.",
-    insight: "Your shelf isn't a collection. It's a cast of characters. You remember where you bought each one, what mood you were in, what season it was. You live inside books differently.",
-    blindspot: "Your to-be-read pile is technically a second bookshelf. You've accepted this.",
-    signal: "You can smell a good book in a store. Something about the cover. The weight. The font on the spine. You just know.",
-    confession: "You've rearranged your shelf by color, then mood, then spine-out aesthetics, then regretted all of it. Currently in a compromise era.",
-  },
-  {
-    label: "Midnight Theorist",
-    match: "You read to understand things. People, patterns, the strange machinery of the world.",
-    prompt: "Post this when your shelf is basically a graduate program you designed yourself.",
-    insight: "You underline differently. Not for feeling — for thinking. Your margins are a second book. You return to chapters. You argue with authors in your head and sometimes win.",
-    blindspot: "You've started explaining a book at dinner and watched the table go quiet. You finished anyway. They were grateful, eventually.",
-    signal: "Your reading is research even when it isn't. Everything connects. You can't help it.",
-    confession: "You've recommended a book to someone and then been mildly offended they didn't finish it. You didn't say anything. But you noticed.",
-  },
-  {
-    label: "Chaotic Bookworm",
-    match: "You read whatever finds you. Genre is a suggestion. Mood is the only law.",
-    prompt: "Post this when your shelf defies categorization and you're proud of it.",
-    insight: "Your TBR pile is not a plan — it's a living thing. It grows. It shifts. You've bought books mid-book because the vibe called you elsewhere. This is not a flaw. This is your process.",
-    blindspot: "There are definitely books on your shelf you don't remember buying. You will not investigate. The mystery is part of it.",
-    signal: "You've recommended wildly different books to the same person at different times. Both were exactly right. Your instincts are weird and they work.",
-    confession: "You've DNF'd books that everyone loves and finished books that made no sense to anyone else. Your taste is a whole personality and you're leaning in.",
-  },
-];
-
 const PLUS_PLANS = [
   {
     id: "lumina_plus_monthly",
@@ -192,11 +112,9 @@ const PLUS_PLANS = [
 
 const MAX_DISPLAY_NAME_LENGTH = 24;
 
-const DAILY_GUEST_SCAN_LIMIT = 12;
 const ANONYMOUS_SCAN_LIMIT = 3;
 const DAILY_USER_SCAN_LIMIT = 10;
 
-const NO_PREVIEW_LABEL = "No preview";
 const HIDDEN_FOLDER_NAMES = new Set(["read aloud", "school"]);
 const NEW_FOLDER_OPTION = "__new_folder__";
 const MAX_LIBRARY_CARDS = 10;
@@ -435,6 +353,7 @@ function getVisibleFolders(folders) {
   );
 }
 
+/* eslint-disable-next-line react-refresh/only-export-components */
 export function getFolderDisplayLabel(folderName) {
   return folderName;
 }
@@ -1317,7 +1236,6 @@ export {
   getScanConfidenceDisplayLabel,
   getSearchIntent,
   getTimeGreeting,
-  isValidEmail,
   matchesSearchIntent,
   matchesStructuredFilters,
   mergeUniqueByKey,
@@ -1327,8 +1245,6 @@ export {
   safeParseJson,
   sanitizeDisplayName,
   scoreGoogleBooksMatch,
-  validateDisplayName,
-  validatePassword,
 };
 /* eslint-enable react-refresh/only-export-components */
 
@@ -1383,54 +1299,14 @@ const CARTOONS = [
   }
 ];
 
-function generateRandomAvatarSvg() {
-  const colors = ["#fbcfe8", "#fed7aa", "#bbf7d0", "#fef08a", "#e2e8f0", "#c084fc", "#f472b6", "#60a5fa", "#34d399", "#fb7185"];
-  const accentColors = ["#db2777", "#ea580c", "#16a34a", "#ca8a04", "#475569", "#7c3aed", "#be185d", "#2563eb", "#059669", "#e11d48"];
-  
-  const bgColor = colors[Math.floor(Math.random() * colors.length)];
-  const accentColor = accentColors[Math.floor(Math.random() * accentColors.length)];
-  const eyeSize = 3 + Math.random() * 3;
-  const mouthCurve = 50 + Math.random() * 20;
-  
-  const mouthY = 56 + Math.random() * 6;
-  const mouthSvg = Math.random() > 0.5 
-    ? `<path d="M 35 ${mouthY} Q 50 ${mouthY + 12} 65 ${mouthY}" stroke="${accentColor}" stroke-width="4" fill="none" stroke-linecap="round"/>`
-    : `<ellipse cx="50" cy="${mouthY}" rx="${5 + Math.random() * 5}" ry="${3 + Math.random() * 3}" fill="${accentColor}"/>`;
-
-  const accessoryType = Math.floor(Math.random() * 4);
-  let accessorySvg = "";
-  if (accessoryType === 0) {
-    accessorySvg = `<ellipse cx="30" cy="18" rx="8" ry="20" fill="${bgColor}" stroke="${accentColor}" stroke-width="2"/>
-                    <ellipse cx="70" cy="18" rx="8" ry="20" fill="${bgColor}" stroke="${accentColor}" stroke-width="2"/>`;
-  } else if (accessoryType === 1) {
-    accessorySvg = `<circle cx="22" cy="28" r="14" fill="${bgColor}" stroke="${accentColor}" stroke-width="2"/>
-                    <circle cx="78" cy="28" r="14" fill="${bgColor}" stroke="${accentColor}" stroke-width="2"/>`;
-  } else if (accessoryType === 2) {
-    accessorySvg = `<polygon points="50,5 38,25 62,25" fill="${accentColor}"/>`;
-  } else {
-    accessorySvg = `<circle cx="30" cy="54" r="6" fill="#f43f5e" opacity="0.4"/>
-                    <circle cx="70" cy="54" r="6" fill="#f43f5e" opacity="0.4"/>`;
-  }
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-    ${accessorySvg}
-    <circle cx="50" cy="50" r="42" fill="${bgColor}" stroke="${accentColor}" stroke-width="3"/>
-    <circle cx="38" cy="46" r="${eyeSize}" fill="#000"/>
-    <circle cx="62" cy="46" r="${eyeSize}" fill="#000"/>
-    ${mouthSvg}
-  </svg>`;
-}
-
 function getAvatarSvgContent({ bgColor, accentColor, accessory, eyeSize, mouth, bgImage }) {
   const mouthY = 56;
-  let mouthSvg = "";
-  if (mouth === "smile") {
-    mouthSvg = `<path d="M 35 ${mouthY} Q 50 ${mouthY + 10} 65 ${mouthY}" stroke="${accentColor}" stroke-width="4" fill="none" stroke-linecap="round"/>`;
-  } else if (mouth === "circle") {
-    mouthSvg = `<ellipse cx="50" cy="${mouthY}" rx="6" ry="6" fill="${accentColor}"/>`;
-  } else {
-    mouthSvg = `<ellipse cx="50" cy="${mouthY}" rx="8" ry="4" fill="${accentColor}"/>`;
-  }
+  const mouthSvg =
+    mouth === "smile"
+      ? `<path d="M 35 ${mouthY} Q 50 ${mouthY + 10} 65 ${mouthY}" stroke="${accentColor}" stroke-width="4" fill="none" stroke-linecap="round"/>`
+      : mouth === "circle"
+        ? `<ellipse cx="50" cy="${mouthY}" rx="6" ry="6" fill="${accentColor}"/>`
+        : `<ellipse cx="50" cy="${mouthY}" rx="8" ry="4" fill="${accentColor}"/>`;
 
   let accessorySvg = "";
   if (accessory === "bunny") {
@@ -1525,6 +1401,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState("scan");
   const {
     user,
+    setUser,
     authReady,
     authMode,
     setAuthMode,
@@ -1533,6 +1410,7 @@ export default function App() {
     authMessage,
     setAuthMessage,
     authLoading,
+    setAuthLoading,
     handleAuthSubmit,
     handleGoogleLogin,
     handleAppleLogin,
@@ -1587,7 +1465,6 @@ export default function App() {
     openManualBookModal,
     closeManualBookModal,
     handleManualBookChange,
-    toggleSection,
   } = useAppUI();
   
   const {
@@ -1597,10 +1474,9 @@ export default function App() {
     isAnonymousPlus, setIsAnonymousPlus,
     userScanCount, setUserScanCount,
     isUserPlus, setIsUserPlus,
-    lastScanDate, setLastScanDate,
+    setLastScanDate,
     checkScanLimit,
     incrementScanCount,
-    resetScanLimits
   } = useScan({ db, user });
   const [saveStatus, setSaveStatus] = useState(null);
 
@@ -1610,7 +1486,7 @@ export default function App() {
     folders, setFolders,
     bookFolders, setBookFolders,
     bookTags, setBookTags,
-    activeFolder, setActiveFolder,
+    setActiveFolder,
     activeTagFilter, setActiveTagFilter,
     isBookInReadingList,
     hasSavedPreview,
@@ -1649,7 +1525,6 @@ export default function App() {
 
 
   const [cameraIdle, setCameraIdle] = useState(false);
-  const [vibeMood, setVibeMood] = useState(VIBE_MOODS[0]);
   const [selectedPlusPlan, setSelectedPlusPlan] = useState(PLUS_PLANS[0].id);
   const [vibeStatus, setVibeStatus] = useState("");
   const [vibeAiResult, setVibeAiResult] = useState(null);
@@ -1657,7 +1532,7 @@ export default function App() {
   const [vibeAiPreviews, setVibeAiPreviews] = useState({});
   const vibePhotoInputRef = useRef(null);
   const vibeAiCacheRef = useRef({});
-  const [referralShares, setReferralShares] = useState(0);
+  const [referralShares] = useState(0);
 
 
   const localUserStateRef = useRef({
@@ -1721,7 +1596,7 @@ export default function App() {
           if (val !== null) {
             try {
               await localforage.setItem(key, JSON.parse(val));
-            } catch (e) {
+            } catch {
               await localforage.setItem(key, val);
             }
           }
@@ -1793,6 +1668,7 @@ export default function App() {
   useEffect(() => {
     let interval;
     if (loading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoadingStep(0);
       interval = setInterval(() => {
         setLoadingStep((prev) => Math.min(prev + 1, 3));
@@ -1851,6 +1727,7 @@ export default function App() {
   // Camera idle pulse — starts 3s after landing on the scan page with nothing loaded
   useEffect(() => {
     if (currentPage !== "scan" || books.length > 0 || imagePreview || loading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCameraIdle(false);
       return;
     }
@@ -1881,12 +1758,6 @@ export default function App() {
   useEffect(() => {
     writeStoredJson("libraryCards", libraryCards);
   }, [libraryCards]);
-
-  useEffect(() => {
-    if (compare.length < 2 && compareOpen) {
-      setCompareOpen(false);
-    }
-  }, [compare.length]);
 
   useEffect(() => {
     const initRevenueCat = async () => {
@@ -2222,6 +2093,31 @@ export default function App() {
     }
   }
 
+  async function ensureBarcodeScannerReady() {
+    if (!isNativeApp) {
+      throw new Error("Barcode scanning is only available in the iOS or Android app. Use Upload Photo on web.");
+    }
+
+    const support = await BarcodeScanner.isSupported();
+    if (!support?.supported) {
+      throw new Error("Barcode scanning is not supported on this device.");
+    }
+
+    if (isAndroidApp) {
+      const moduleState = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
+      if (!moduleState?.available) {
+        await BarcodeScanner.installGoogleBarcodeScannerModule();
+        throw new Error("Installing the Google barcode scanner. Wait a moment, then tap Scan Barcode again.");
+      }
+      return;
+    }
+
+    const { camera } = await BarcodeScanner.requestPermissions();
+    if (camera !== "granted" && camera !== "limited") {
+      throw new Error("Camera permission is required to scan barcodes.");
+    }
+  }
+
   function updateAuthForm(field, value) {
     setAuthForm((currentForm) => ({
       ...currentForm,
@@ -2229,45 +2125,6 @@ export default function App() {
     }));
     setAuthMessage("");
   }
-
-  function getAuthErrorMessage(err) {
-    const code = err?.code || "";
-    const message = String(err?.message || "");
-
-    if (code.includes("invalid-credential")) return "Email or password is incorrect.";
-    if (code.includes("email-already-in-use")) return "That email already has an account.";
-    if (code.includes("user-not-found")) return "No password account was found for that email.";
-    if (code.includes("weak-password")) return "Use a stronger password.";
-    if (code.includes("too-many-requests")) return "Too many attempts. Wait a few minutes, then try again.";
-    if (code.includes("missing-email")) return "Enter your email address first.";
-    if (code.includes("invalid-email")) return "Enter a valid email address.";
-    if (code.includes("popup-closed-by-user")) return "Google sign-in was closed.";
-    if (code.includes("configuration-not-found")) {
-      return "Firebase Authentication is not enabled for this project yet. In Firebase, open Authentication, click Get started, then enable Google and Email/Password sign-in.";
-    }
-    if (code.includes("popup-blocked")) {
-      return "The browser blocked the Google pop-up. Trying redirect sign-in...";
-    }
-    if (code.includes("operation-not-allowed")) {
-      return "Google sign-in is not enabled in Firebase yet. Enable Google under Authentication > Sign-in method.";
-    }
-    if (code.includes("unauthorized-domain")) {
-      return "This app URL is not authorized in Firebase. Add 127.0.0.1 and localhost under Authentication > Settings > Authorized domains.";
-    }
-    if (code.includes("network-request-failed")) {
-      return "Firebase could not connect. Check your internet connection and try again.";
-    }
-    if (
-      message.toLowerCase().includes("no credentials available") ||
-      code.includes("credential-unavailable")
-    ) {
-      return "No Google account is available on this device, or Android Google sign-in is not fully configured yet. Sign into Google on the device, verify the Firebase Android app setup for com.shilpi.lumina, then try again.";
-    }
-
-    return err?.message || "Authentication failed. Please try again.";
-  }
-
-
 
   function updateLibraryCardForm(field, value) {
     setLibraryCardForm((currentForm) => ({
@@ -2449,23 +2306,26 @@ Do not include explanations.
         return;
       }
       if (!checkScanLimit()) return;
-      incrementScanCount();
       
       setLoading(true);
       setLoadingStep(0);
       setError("");
 
-      const { camera } = await BarcodeScanner.requestPermissions();
-      if (camera !== 'granted' && camera !== 'limited') {
-        setError("Camera permission is required to scan barcodes.");
-        setLoading(false);
-        return;
-      }
-
-      const result = await BarcodeScanner.scan();
+      await ensureBarcodeScannerReady();
+      const result = await BarcodeScanner.scan({
+        formats: BOOK_BARCODE_FORMATS,
+        autoZoom: true,
+      });
       
       if (result.barcodes && result.barcodes.length > 0) {
-        const barcode = result.barcodes[0].displayValue;
+        const barcode = sanitizeLibraryCardNumber(
+          result.barcodes[0].displayValue || result.barcodes[0].rawValue || ""
+        );
+        if (!barcode) {
+          setError("No ISBN barcode was detected. Try again with the back cover barcode centered.");
+          return;
+        }
+        incrementScanCount();
         
         const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
         const res = await searchGoogleBooks({ query: `isbn:${barcode}`, limit: 1 });
@@ -2489,10 +2349,13 @@ Do not include explanations.
         } else {
           setError("No book found for ISBN " + barcode);
         }
+      } else {
+        setError("No ISBN barcode was detected. Try again with the back cover barcode centered.");
       }
     } catch (err) {
       console.error("Barcode scan failed:", err);
-      setError("Failed to scan barcode: " + err.message);
+      const message = String(err?.message || "");
+      setError(message || "Failed to scan barcode. Try again.");
     } finally {
       setLoading(false);
     }
@@ -2555,9 +2418,9 @@ Do not include explanations.
           parts: [
             {
               text: `
-You are a smart library bookshelf assistant.
+You are a careful library bookshelf assistant.
 
-Look at this bookshelf image. Detect visible book titles as best as possible.
+Look at this bookshelf image. Detect visible book titles from every readable surface: front covers, back covers, tilted books, stacked books, and book spines. Do not focus only on spines.
 
 Return ONLY valid JSON in this exact format:
 
@@ -2576,12 +2439,16 @@ Return ONLY valid JSON in this exact format:
       "ageRecommendation": "Kids / Young Readers / Teen / Adult / All ages",
       "whyRead": "Why someone may like this book",
       "shelfPick": "Top Rated / Hidden Gem / Beginner Friendly / Popular / Educational",
-      "shelfLocation": "Very detailed location in the photo, such as top row left side, middle row center, bottom row right side, third book from the left, leaning behind another book, or partly hidden"
+      "shelfLocation": "Very detailed location in the photo, such as top row left side, middle row center, bottom row right side, third book from the left, leaning behind another book, or partly hidden",
+      "scanConfidence": "Confidence: high / Confidence: medium / Confidence: low",
+      "confidenceReason": "Brief note about what readable text or visual evidence supports this identification"
     }
   ]
 }
 
 Important:
+- Inspect front cover faces and large cover titles before spines when covers are visible.
+- Prefer a partial but honest title over a confident wrong title. If the title is partly visible, include the readable words and set scanConfidence to low.
 - If rating is not visible, estimate a general public rating.
 - If exact rating source is unknown, use "Estimated".
 - Include a short author biography.
@@ -2591,8 +2458,9 @@ Important:
   - 7+ for grade 7 and above or teen/adult books
 - Include at most 12 books.
 - Do NOT hallucinate, guess, or invent books.
-- Only list books if you can clearly and confidently read the title or author on the spine or cover.
+- Only list books if at least one meaningful title or author word is readable on a spine, front cover, or back cover.
 - If an object is not clearly a book with readable text, ignore it.
+- If several books are visible but not readable, omit them rather than filling in likely titles.
 - For shelfLocation, describe exactly where the book appears in the image:
   row from top to bottom, left/middle/right section, order from left or right,
   whether it is vertical, horizontal, leaning, stacked, partly hidden, or near
@@ -2680,14 +2548,20 @@ Important:
       ? "Microphone permission is needed. Open Android Settings > Apps > Lumina > Permissions > Microphone, allow it, then try again."
       : "Microphone permission is needed. Allow microphone access for this app in your browser or device settings, then try again.";
 
-    if (isAndroidApp && NativeSpeech?.start) {
+    if (isAndroidApp && hasNativeSpeech && NativeSpeech?.start) {
       setVoiceListening(true);
       setVoiceStatus("Listening...");
       setError("");
 
       try {
         const result = await NativeSpeech.start({ language: "en-US" });
-        const transcript = String(result?.transcript || "").trim();
+        const transcript = String(
+          result?.transcript ||
+            result?.text ||
+            result?.value ||
+            result?.matches?.[0] ||
+            ""
+        ).trim();
 
         if (!transcript) {
           setVoiceStatus("I did not catch that. Try again.");
@@ -2771,6 +2645,7 @@ Important:
 
     recognition.onend = () => {
       setVoiceListening(false);
+      recognitionRef.current = null;
     };
 
     try {
@@ -2778,6 +2653,7 @@ Important:
     } catch (err) {
       console.error("Voice search failed:", err);
       setVoiceListening(false);
+      recognitionRef.current = null;
       setVoiceStatus("Voice search could not start. Try again.");
     }
   }
@@ -3023,22 +2899,21 @@ Important:
   }
 
   function toggleCompare(book) {
-    const exists = compare.some((b) => getBookKey(b) === getBookKey(book));
+    setCompare((currentCompare) => {
+      const exists = currentCompare.some((b) => getBookKey(b) === getBookKey(book));
 
-    if (exists) {
-      setCompare(compare.filter((b) => getBookKey(b) !== getBookKey(book)));
-      return;
-    }
+      if (exists) {
+        return currentCompare.filter((b) => getBookKey(b) !== getBookKey(book));
+      }
 
-    if (compare.length < 2) {
-      const nextCompare = [...compare, book];
-      setCompare(nextCompare);
+      const nextCompare =
+        currentCompare.length < 2
+          ? [...currentCompare, book]
+          : [currentCompare[1], book];
+
       if (nextCompare.length === 2) setCompareOpen(true);
-      return;
-    }
-
-    setCompare([compare[1], book]);
-    setCompareOpen(true);
+      return nextCompare;
+    });
   }
 
   const loadSimilarBooks = useCallback(async (book) => {
@@ -3190,6 +3065,7 @@ Important:
 
   useEffect(() => {
     if (currentPage === "discover" && fypBooks.length === 0 && !fypLoading && !fypError) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadFypRecommendations();
     }
   }, [currentPage, fypBooks.length, fypLoading, fypError, loadFypRecommendations]);
@@ -3672,7 +3548,7 @@ Important:
                   toggleCompare(book);
                 }}
               >
-                {compareSelected ? "Pick another book to compare" : e("⚖️", "Compare")}
+                {compareSelected ? "Remove from Compare" : e("⚖️", "Compare")}
               </button>
             </div>
 
@@ -5433,8 +5309,6 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
       );
     }
 
-    const selectedPlan = PLUS_PLANS.find((plan) => plan.id === selectedPlusPlan) || PLUS_PLANS[0];
-
     return (
       <section style={styles.vibePage}>
         <div style={styles.vibeHero}>
@@ -5975,10 +5849,7 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
               aria-label="Reset Lumina"
             >
               <div style={styles.brandMark} aria-hidden="true">
-                <span style={styles.logoBook} />
-                <span style={styles.logoSpine} />
-                <span style={styles.logoLens} />
-                <span style={styles.logoBeam} />
+                <img src={playStoreLogo} alt="" style={styles.brandMarkImage} />
               </div>
               <h1 style={styles.title}>Lumina</h1>
             </button>
@@ -6249,10 +6120,9 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
           <div style={styles.compareTrayActions}>
             <button
               style={styles.smallButton}
-              disabled={compare.length < 2}
               onClick={() => setCompareOpen(true)}
             >
-              Open Compare
+              {compare.length < 2 ? "View Selection" : "Open Compare"}
             </button>
             <button style={styles.deleteButton} onClick={() => setCompare([])}>
               Clear
@@ -7702,45 +7572,11 @@ const styles = {
     overflow: "hidden",
     flex: "0 0 auto",
   },
-  logoBook: {
-    position: "absolute",
-    left: "12px",
-    bottom: "12px",
-    width: "24px",
-    height: "28px",
-    borderRadius: "3px 7px 7px 3px",
-    background: "var(--accent)",
-    boxShadow: "inset 4px 0 0 rgba(255, 255, 255, 0.24)",
-  },
-  logoSpine: {
-    position: "absolute",
-    left: "18px",
-    bottom: "17px",
-    width: "3px",
-    height: "18px",
-    borderRadius: "999px",
-    background: "rgba(255, 255, 255, 0.72)",
-  },
-  logoLens: {
-    position: "absolute",
-    right: "10px",
-    top: "11px",
-    width: "19px",
-    height: "19px",
-    borderRadius: "999px",
-    border: "3px solid var(--accent)",
-    background: "rgba(17, 18, 20, 0.7)",
-  },
-  logoBeam: {
-    position: "absolute",
-    right: "5px",
-    top: "31px",
-    width: "18px",
-    height: "4px",
-    borderRadius: "999px",
-    background: "var(--accent)",
-    transform: "rotate(43deg)",
-    transformOrigin: "left center",
+  brandMarkImage: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "block",
   },
   title: {
     margin: 0,
