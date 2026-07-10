@@ -24,6 +24,10 @@ const isFirebaseConfigured =
   firebaseConfig.projectId &&
   firebaseConfig.projectId !== "YOUR_PROJECT_ID";
 const isTestMode = import.meta.env.MODE === "test";
+const isLocalDevHost =
+  typeof window !== "undefined" &&
+  ["localhost", "127.0.0.1"].includes(window.location.hostname);
+const shouldEnableBrowserFirebaseExtras = !isTestMode && !isLocalDevHost;
 
 let app = null;
 let analytics = null;
@@ -35,12 +39,12 @@ let cloudFunctions = null;
 try {
   if (isFirebaseConfigured) {
     app = initializeApp(firebaseConfig);
-    analytics = isTestMode ? null : getAnalytics(app);
+    analytics = shouldEnableBrowserFirebaseExtras ? getAnalytics(app) : null;
     auth = getAuth(app);
     db = getFirestore(app);
     cloudFunctions = getFunctions(app, "us-central1");
 
-    if (!isTestMode && import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY) {
+    if (shouldEnableBrowserFirebaseExtras && import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY) {
       appCheck = initializeAppCheck(app, {
         provider: new ReCaptchaEnterpriseProvider(
           import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY

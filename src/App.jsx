@@ -30,8 +30,9 @@ import { useAuth } from "./hooks/useAuth";
 import { DEFAULT_FOLDERS, useLibrary } from "./hooks/useLibrary";
 import { useAppUI } from "./hooks/useAppUI";
 import { useScan } from "./hooks/useScan";
+import { NativeSpeech, hasNativeSpeech, isAndroidApp, isNativeApp } from "./utils/nativeSpeech";
 import { useCallback, useMemo, useState, useEffect, useRef } from "react";
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import {
   signInAnonymously,
@@ -52,19 +53,20 @@ import {
   logEvent,
 } from "./firebase";
 import ChatBox from "./components/ChatBox";
+import AppHeader from "./components/AppHeader";
+import BookDetailsModal from "./components/BookDetailsModal";
+import BookDetailSummaryGrid from "./components/BookDetailSummaryGrid";
+import CompareTray from "./components/CompareTray";
+import ScanLandingSection from "./components/ScanLandingSection";
+import ScanResultsSection from "./components/ScanResultsSection";
 import { Purchases, LOG_LEVEL } from "@revenuecat/purchases-capacitor";
 import localforage from "localforage";
 import { BarcodeFormat, BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
-import playStoreLogo from "../play-store-assets/app-icon-512.png";
 const IS_BETA_MODE = true;
 
 const firebaseProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || "lumina-kaboom";
 const firestoreConsoleUrl = `https://console.firebase.google.com/project/${firebaseProjectId}/firestore/databases/-default-/data/~2Fusers`;
 const firebaseAuthConsoleUrl = `https://console.firebase.google.com/project/${firebaseProjectId}/authentication/users`;
-const isNativeApp = Capacitor.isNativePlatform();
-const isAndroidApp = Capacitor.getPlatform() === "android";
-const NativeSpeech = registerPlugin("NativeSpeech");
-const hasNativeSpeech = Capacitor.isPluginAvailable("NativeSpeech");
 const isAndroidGoogleSsoConfigured =
   import.meta.env.VITE_ANDROID_GOOGLE_SSO_READY === "true";
 const isGeminiConfigured = isFirebaseConfigured;
@@ -5839,56 +5841,13 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
         ))}
       </div>
 
-      <div style={styles.hero}>
-        <div style={styles.heroText}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <button
-              type="button"
-              style={{ ...styles.brandButton, flex: 1 }}
-              onClick={resetPage}
-              aria-label="Reset Lumina"
-            >
-              <div style={styles.brandMark} aria-hidden="true">
-                <img src={playStoreLogo} alt="" style={styles.brandMarkImage} />
-              </div>
-              <h1 style={styles.title}>Lumina</h1>
-            </button>
-            <button
-              type="button"
-              style={{
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: "8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "50%",
-                backgroundColor: "rgba(34, 49, 71, 0.05)",
-              }}
-              onClick={() => setCurrentPage("account")}
-              aria-label="Account"
-            >
-              {user?.customPhotoURL || user?.photoURL ? (
-                <img src={user.customPhotoURL || user.photoURL} alt="Profile" style={{ width: "44px", height: "44px", borderRadius: "50%", objectFit: "cover" }} />
-              ) : (
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="#1e293b"/>
-                </svg>
-              )}
-            </button>
-          </div>
-          {currentPage === "scan" && (
-            <div style={{ marginTop: "12px", textAlign: "center" }}>
-              <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 4px 0", color: "#1e293b", textAlign: "center" }}>Take a photo of your bookshelf</h2>
-              <p style={{ ...styles.homeSubtitleBody, textAlign: "center", color: "#1e293b" }}>
-                Lumina will identify the books, organize them, and help you
-                choose what to read next.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+      <AppHeader
+        currentPage={currentPage}
+        resetPage={resetPage}
+        setCurrentPage={setCurrentPage}
+        user={user}
+        styles={styles}
+      />
 
       {currentPage === "account" && renderAccountPage()}
       {currentPage === "saved" && renderSavedBooksPage()}
@@ -5897,298 +5856,92 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
 
       {currentPage === "scan" && (
         <>
-          <section className="greeting-enter" style={{...styles.homeGreetingPanel, textAlign: "center", border: "none", boxShadow: "none", background: "transparent", padding: "0", margin: "16px 0 0"}}>
-            {authReady && (
-              <h2 style={{...styles.homeGreetingTitle, fontSize: "24px", fontWeight: "700"}}>{homeGreeting}</h2>
-            )}
-            <div style={{ marginTop: "8px", fontSize: "14px", color: "#64748b", display: "flex", justifyContent: "center", gap: "12px" }}>
-              {(user ? isUserPlus : isAnonymousPlus) ? (
-                <span style={{ background: "var(--accent-bg)", color: "var(--accent)", padding: "4px 10px", borderRadius: "12px", fontWeight: "600" }}>✨ Plus: Unlimited Scans</span>
-              ) : (user ? userScanCount : anonymousScanCount) > 0 ? (
-                <>
-                  <span>Scans used: <strong>{user ? userScanCount : anonymousScanCount} / {user ? 10 : 3}</strong></span>
-                  <span>Plus: <strong>Unlimited</strong></span>
-                </>
-              ) : null}
-            </div>
-          </section>
-
-      <div className="scan-buttons-enter" style={{ ...styles.uploadBox, display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
-        <label
-          className={`btn-press${cameraIdle && !books.length && !imagePreview && !loading ? " camera-btn-pulse" : ""}`}
-          style={{
-            ...styles.cameraButton,
-            ...(!isFirebaseConfigured ? styles.scanButtonNeedsAuth : {}),
-            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-            margin: 0,
-          }}
-          onClick={() => { setCameraIdle(false); handleScanPickerClick(); }}
-        >
-          {e("📷", "Take Photo")}
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            hidden
-            disabled={isOffline}
-            onChange={(e) => handleImage(e.target.files[0])}
+          <ScanLandingSection
+            anonymousScanCount={anonymousScanCount}
+            authReady={authReady}
+            books={books}
+            cameraIdle={cameraIdle}
+            e={e}
+            error={error}
+            handleBarcodeScan={handleBarcodeScan}
+            handleImage={handleImage}
+            handleScanPickerClick={handleScanPickerClick}
+            homeGreeting={homeGreeting}
+            imagePreview={imagePreview}
+            isAnonymousPlus={isAnonymousPlus}
+            isFirebaseConfigured={isFirebaseConfigured}
+            isOffline={isOffline}
+            isUserPlus={isUserPlus}
+            loading={loading}
+            openManualBookModal={openManualBookModal}
+            renderFilterControls={renderFilterControls}
+            setBooks={setBooks}
+            setCameraIdle={setCameraIdle}
+            setCompare={setCompare}
+            setCompareOpen={setCompareOpen}
+            setError={setError}
+            setImagePreview={setImagePreview}
+            setSaveStatus={setSaveStatus}
+            setSelectedBook={setSelectedBook}
+            setSimilarBooksView={setSimilarBooksView}
+            shelfPhotoHistory={shelfPhotoHistory}
+            styles={styles}
+            user={user}
+            userScanCount={userScanCount}
           />
-        </label>
-
-        <label
-          className="btn-press"
-          style={{
-            ...styles.uploadPhotoButton,
-            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-            margin: 0,
-          }}
-          onClick={() => { setCameraIdle(false); }}
-        >
-          {e("➕", "Upload Photo")}
-          <input
-            type="file"
-            accept="image/*"
-            hidden
-            disabled={isOffline}
-            onChange={(e) => handleImage(e.target.files[0])}
+          <ScanResultsSection
+            books={books}
+            detectedBooks={detectedBooks}
+            filteredBooks={filteredBooks}
+            renderBookCard={renderBookCard}
+            renderCollapsibleSection={renderCollapsibleSection}
+            styles={styles}
+            topBooks={topBooks}
           />
-        </label>
-
-        <button
-          type="button"
-          className="btn-press"
-          style={{
-            ...styles.uploadPhotoButton,
-            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-            margin: 0,
-            background: "var(--accent-bg)",
-            color: "var(--accent)"
-          }}
-          onClick={handleBarcodeScan}
-          disabled={isOffline || loading}
-        >
-          {e("🏷️", "Scan Barcode")}
-        </button>
-
-        <button
-          type="button"
-          className="btn-press"
-          style={{
-            ...styles.manualBookButton,
-            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-            margin: 0,
-          }}
-          disabled={isOffline}
-          onClick={openManualBookModal}
-        >
-          {e("✍️", "Add Book Manually")}
-        </button>
-      </div>
-
-      {renderFilterControls()}
-
-      {imagePreview && (
-        <div style={styles.previewBlock}>
-          <img src={imagePreview} alt="Bookshelf" style={styles.preview} />
-          <button
-            type="button"
-            style={styles.clearPreviewButton}
-            onClick={() => {
-              setImagePreview(null);
-              setBooks([]);
-              setSelectedBook(null);
-              setCompare([]);
-              setCompareOpen(false);
-              setSimilarBooksView(null);
-              setError("");
-              setSaveStatus(null);
-            }}
-          >
-            Clear scanned image
-          </button>
-        </div>
-      )}
-
-      {shelfPhotoHistory.length > 1 && (
-        <div style={{ padding: "0 16px 12px" }}>
-          <p style={{ fontSize: "12px", color: "#718096", marginBottom: "8px", fontWeight: "600" }}>Shelf Photo History ({shelfPhotoHistory.length}/5)</p>
-          <div style={{ display: "flex", gap: "8px", overflowX: "auto", paddingBottom: "4px" }}>
-            {shelfPhotoHistory.map((url, idx) => (
-              <button
-                key={url}
-                type="button"
-                onClick={() => setImagePreview(url)}
-                aria-label={`Shelf photo ${idx + 1}`}
-                style={{
-                  padding: 0,
-                  border: url === imagePreview ? "2px solid #6366f1" : "2px solid transparent",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  background: "none",
-                  flexShrink: 0,
-                }}
-              >
-                <img
-                  src={url}
-                  alt={`Shelf ${idx + 1}`}
-                  style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "6px", display: "block" }}
-                />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {error && <p style={styles.error}>{error}</p>}
-
-
-
-      {books.length > 0 && (
-        <>
-          {filteredBooks.length === 1 ? (
-            renderCollapsibleSection({
-              id: "scannedBook",
-              title: "Scanned book",
-              meta: "1",
-              defaultOpen: true,
-              children: (
-                <div style={styles.grid}>
-                  {filteredBooks.map((book, index) =>
-                    renderBookCard(book, index, { prefix: "single", topPick: true })
-                  )}
-                </div>
-              ),
-            })
-          ) : (
-            <>
-              {renderCollapsibleSection({
-                id: "topPicks",
-                title: "Top picks",
-                meta: `${topBooks.length}`,
-                defaultOpen: true,
-                children:
-                  topBooks.length === 0 ? (
-                    <p style={styles.error}>No top picks match your search.</p>
-                  ) : (
-                    <div style={styles.grid}>
-                      {topBooks.map((book, index) =>
-                        renderBookCard(book, index, { prefix: "top", topPick: true })
-                      )}
-                    </div>
-                  ),
-              })}
-
-              {books.length > 3 && renderCollapsibleSection({
-                id: "detectedBooks",
-                title: "Detected books",
-                meta: `${detectedBooks.length}`,
-                defaultOpen: true,
-                children: (
-                  <div style={styles.grid}>
-                    {detectedBooks.length === 0 ? (
-                      <p style={styles.error}>
-                        {filteredBooks.length === 0
-                          ? "No matching books found. Try another word."
-                          : "All matching books are already shown in Top Picks."}
-                      </p>
-                    ) : (
-                      detectedBooks.map((book, index) =>
-                        renderBookCard(book, index, { prefix: "detected" })
-                      )
-                    )}
-                  </div>
-                ),
-              })}
-            </>
-          )}
-        </>
-      )}
         </>
       )}
 
-      {currentPage === "scan" && compare.length > 0 && (
-        <section style={styles.compareTray}>
-          <div>
-            <h2 style={{ ...styles.sectionTitle, marginTop: 0 }}>{e("⚖️", "Compare Books")}</h2>
-            <p style={styles.countText}>
-              {compare.length === 1
-                ? "Choose one more book to compare side by side."
-                : `${compare[0].title} vs ${compare[1].title}`}
-            </p>
-          </div>
-
-          <div style={styles.compareTrayActions}>
-            <button
-              style={styles.smallButton}
-              onClick={() => setCompareOpen(true)}
-            >
-              {compare.length < 2 ? "View Selection" : "Open Compare"}
-            </button>
-            <button style={styles.deleteButton} onClick={() => setCompare([])}>
-              Clear
-            </button>
-          </div>
-        </section>
+      {currentPage === "scan" && (
+        <CompareTray
+          compare={compare}
+          e={e}
+          setCompare={setCompare}
+          setCompareOpen={setCompareOpen}
+          styles={styles}
+        />
       )}
 
-      {selectedBook &&
-        (() => {
-          const theme = getTheme(selectedBook);
-          const detailSaveStatus = getScopedSaveStatus(
-            saveStatus,
+	      {selectedBook &&
+	        (() => {
+	          const theme = getTheme(selectedBook);
+	          const detailSaveStatus = getScopedSaveStatus(
+	            saveStatus,
             selectedBook,
             "details"
-          );
-          const detailsSaved = hasSavedDetails(selectedBook);
-          const previewButton = getPreviewButtonState(selectedBook);
+	          );
+	          const detailsSaved = hasSavedDetails(selectedBook);
+	          const previewButton = getPreviewButtonState(selectedBook);
+            const closeDetails = () => {
+              if (window.location.hash === "#details") window.history.back();
+              else setSelectedBook(null);
+            };
+            const badgeStyle = {
+              ...styles.badge,
+              ...getShelfPickStyle(selectedBook.shelfPick),
+            };
 
-          return (
-            <div className="scan-modal-scroll" style={styles.modal} onClick={() => { if(window.location.hash === "#details") window.history.back(); else setSelectedBook(null); }}>
-              <div
-                style={{
-                  ...styles.modalContent,
-                  border: `4px solid ${theme.border}`,
-                }}
-                onClick={(e) => e.stopPropagation()}
+	          return (
+	            <BookDetailsModal
+                badgeStyle={badgeStyle}
+                onClose={closeDetails}
+                selectedBook={selectedBook}
+                styles={styles}
+                theme={theme}
               >
-                <div style={styles.modalHeader}>
-                  <div style={{ ...styles.modalIcon, background: theme.imageBg }}>
-                    <span className="detail-orbit" style={styles.detailOrbit} />
-                    <span className="detail-book-core" style={styles.detailBookCore} />
-                    <span className="detail-lens-core" style={styles.detailLensCore} />
-                    <span className="detail-spark-one" style={styles.detailSparkOne} />
-                    <span className="detail-spark-two" style={styles.detailSparkTwo} />
-                  </div>
 
-                  <div>
-                    <h2 style={{ ...styles.modalTitle, color: theme.title }}>
-                      {selectedBook.title}
-                    </h2>
-
-                    <p
-                      style={{
-                        ...styles.badge,
-                        ...getShelfPickStyle(selectedBook.shelfPick),
-                      }}
-                    >
-                      {selectedBook.shelfPick}
-                    </p>
-                  </div>
-                  
-                  <button
-                    type="button"
-                    style={{ ...styles.closeIconButton, position: "absolute", top: "16px", right: "16px" }}
-                    onClick={(e) => { e.stopPropagation(); if(window.location.hash === "#details") window.history.back(); else setSelectedBook(null); }}
-                    aria-label="Close details"
-                    title="Close details"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {renderCollapsibleSection({
-                  id: "detailAuthor",
-                  title: "Author",
+	                {renderCollapsibleSection({
+	                  id: "detailAuthor",
+	                  title: "Author",
                   meta: selectedBook.author,
                   defaultOpen: true,
                   children: (
@@ -6199,67 +5952,17 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
                   style: styles.detailCollapse,
                 })}
 
-                <div style={styles.detailGrid}>
-                  <div style={styles.detailMiniCard}>
-                    <b>⭐ Rating</b>
-                    <p>{selectedBook.rating}</p>
-                  </div>
-
-                  <div style={styles.detailMiniCard}>
-                    <b>🔎 Source</b>
-                    <p>{selectedBook.ratingSource || "Estimated"}</p>
-                  </div>
-
-                  <div style={styles.detailMiniCard}>
-                    <b>🎨 Genre</b>
-                    <p>{selectedBook.genre}</p>
-                  </div>
-
-                  <div style={styles.detailMiniCard}>
-                    <b>🎯 Age</b>
-                    <p>{selectedBook.ageRecommendation}</p>
-                  </div>
-
-                  <div style={styles.detailMiniCard}>
-                    <b>📈 Level</b>
-                    <p>{selectedBook.readingLevel}</p>
-                  </div>
-
-                  <div style={styles.detailMiniCard}>
-                    <b>🏫 Grade</b>
-                    <p>{selectedBook.gradeBand || "Not listed"}</p>
-                  </div>
-
-                  <div style={styles.detailMiniCard}>
-                    <b>✅ Confidence</b>
-                    <p>{getScanConfidenceDisplayLabel(selectedBook)}</p>
-                  </div>
-
-                  <div style={styles.detailMiniCard}>
-                    <b>📁 Folder</b>
-                    <select
-                      style={{
-                        ...styles.inlineSelect,
-                        width: "100%",
-                        marginTop: "6px",
-                        fontSize: "12px",
-                        border: "1px solid rgba(34, 49, 71, 0.15)",
-                        background: "#fff",
-                        cursor: "pointer",
-                      }}
-                      value={bookFolders[getBookKey(selectedBook)] || "Want to read"}
-                      onChange={(event) => handleFolderSelect(selectedBook, event.target.value)}
-                      aria-label="Book folder"
-                    >
-                      {getVisibleFolders(folders).map((folder) => (
-                        <option key={folder} value={folder}>
-                          {folder}
-                        </option>
-                      ))}
-                      <option value={NEW_FOLDER_OPTION}>Add new folder...</option>
-                    </select>
-                  </div>
-                </div>
+	                <BookDetailSummaryGrid
+                    bookFolders={bookFolders}
+                    folders={folders}
+                    getBookKey={getBookKey}
+                    getScanConfidenceDisplayLabel={getScanConfidenceDisplayLabel}
+                    getVisibleFolders={getVisibleFolders}
+                    handleFolderSelect={handleFolderSelect}
+                    newFolderOption={NEW_FOLDER_OPTION}
+                    selectedBook={selectedBook}
+                    styles={styles}
+                  />
 
                 {renderCollapsibleSection({
                   id: "detailNotes",
@@ -6365,8 +6068,8 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
                     disabled={previewButton.disabled}
                     aria-disabled={previewButton.disabled}
                   >
-                    {e("📖", previewButton.label)}
-                  </button>
+	                    {e("📖", previewButton.label)}
+	                  </button>
 
                   <button
                     style={{
@@ -6430,10 +6133,9 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
                     Close
                   </button>
                 </div>
-              </div>
-            </div>
-          );
-        })()}
+	            </BookDetailsModal>
+	          );
+	        })()}
 
       {loading && (
         <div style={styles.processingOverlay}>

@@ -1,12 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { httpsCallable } from 'firebase/functions';
-import { Capacitor, registerPlugin } from "@capacitor/core";
 import { cloudFunctions } from '../firebase';
+import { NativeSpeech, isAndroidApp } from '../utils/nativeSpeech';
 import './ChatBox.css';
-
-const NativeSpeech = registerPlugin("NativeSpeech");
-const isAndroidApp = Capacitor.getPlatform() === "android";
 
 function getAIResponseText(result) {
   let text = result?.text || result?.candidates?.[0]?.content?.parts?.[0]?.text || "";
