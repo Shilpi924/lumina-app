@@ -4975,6 +4975,24 @@ Important:
     });
   }
 
+  function handleDiscoverDelete(book) {
+    const savedBook = getSavedBookGroups(savedFiles).find(
+      (group) => getBookKey(group.catalogBook) === getBookKey(book)
+    );
+    if (!savedBook) return;
+
+    setSwipeDirection("left");
+    deleteSavedBook(savedBook);
+
+    setTimeout(() => {
+      setSwipeDirection(null);
+      setDiscoverIndex((currentIndex) => {
+        const nextLength = Math.max(0, savedFiles.length - 1);
+        return Math.min(currentIndex, Math.max(0, nextLength - 1));
+      });
+    }, 300);
+  }
+
   function renderDiscoverPage() {
     const discoverBooks = savedFiles.map(f => f.payload?.catalogBook).filter(Boolean);
     const currentBook = discoverBooks[discoverIndex];
@@ -5071,7 +5089,8 @@ Important:
             </button>
             <button
               style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px", color: "#ef4444", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", cursor: "pointer" }}
-              onClick={() => handleSwipe("left", currentBook)}
+              onClick={() => handleDiscoverDelete(currentBook)}
+              aria-label="Delete saved book"
             >
               ❌
             </button>
