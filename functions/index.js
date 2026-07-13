@@ -17,13 +17,13 @@ const geminiStrongModel = defineString('GEMINI_MODEL_STRONG', {
   default: 'gemini-2.5-pro',
 });
 const claudeCheapModel = defineString('CLAUDE_MODEL_CHEAP', {
-  default: 'claude-sonnet-4-5',
+  default: 'claude-haiku-4-5',
 });
 const claudeBalancedModel = defineString('CLAUDE_MODEL_BALANCED', {
-  default: 'claude-sonnet-4-5',
+  default: 'claude-haiku-4-5',
 });
 const claudeStrongModel = defineString('CLAUDE_MODEL_STRONG', {
-  default: 'claude-sonnet-4-5',
+  default: 'claude-haiku-4-5',
 });
 const API_USAGE_COLLECTION = 'developerApiUsage';
 const API_USAGE_EVENTS_COLLECTION = 'developerApiUsageEvents';
