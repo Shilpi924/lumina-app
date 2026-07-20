@@ -1,0 +1,5 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "Running UI and Functional tests before pushing to GitHub..."
+npm run test

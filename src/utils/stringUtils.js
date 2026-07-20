@@ -122,3 +122,7 @@ export function getBookKey(book) {
 export function getSavedFileKey(bookTitle, type) {
   return `${type}-${normalizeBookText(bookTitle)}`;
 }
+
+export const e = (emoji, text = "") => {
+  return text ? `${emoji} ${text}` : emoji;
+};

@@ -21,10 +21,10 @@ import {
 import {
   getPromptTokenCount,
   getTotalTokenCount,
-  getGeminiText,
-  generateGeminiContent,
+  getClaudeText,
+  generateClaudeContent,
   getFriendlyScanError,
-} from "./services/geminiService";
+} from "./services/claudeService";
 import { useDeveloper, hasDeveloperAccess } from "./hooks/useDeveloper";
 import { useAuth } from "./hooks/useAuth";
 import { DEFAULT_FOLDERS, useLibrary } from "./hooks/useLibrary";
@@ -32,7 +32,6 @@ import { useAppUI } from "./hooks/useAppUI";
 import { useScan } from "./hooks/useScan";
 import { NativeSpeech, hasNativeSpeech, isAndroidApp, isNativeApp } from "./utils/nativeSpeech";
 import { useCallback, useMemo, useState, useEffect, useRef } from "react";
-import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import {
   signInAnonymously,
@@ -69,14 +68,14 @@ const firestoreConsoleUrl = `https://console.firebase.google.com/project/${fireb
 const firebaseAuthConsoleUrl = `https://console.firebase.google.com/project/${firebaseProjectId}/authentication/users`;
 const isAndroidGoogleSsoConfigured =
   import.meta.env.VITE_ANDROID_GOOGLE_SSO_READY === "true";
-const isGeminiConfigured = isFirebaseConfigured;
+const isClaudeConfigured = isFirebaseConfigured;
 const BOOK_BARCODE_FORMATS = [
   BarcodeFormat.Ean13,
   BarcodeFormat.Ean8,
   BarcodeFormat.UpcA,
   BarcodeFormat.UpcE,
 ];
-const MODEL_NAME = "gemini-2.5-flash-lite";
+const MODEL_NAME = "claude-haiku-4-5";
 const GOOGLE_BOOKS_PREVIEW_TIMEOUT_MS = 10000;
 const GOOGLE_BOOKS_PREVIEW_STALE_MS = GOOGLE_BOOKS_PREVIEW_TIMEOUT_MS + 3000;
 const ONE_MINUTE_MS = 60 * 1000;
@@ -2011,7 +2010,7 @@ export default function App() {
   }, []);
 
 
-  function beginGeminiCall(callType) {
+  function beginClaudeCall(callType) {
     const todayKey = getTodayKey();
     const now = new Date().toISOString();
 
@@ -2038,7 +2037,7 @@ export default function App() {
     });
   }
 
-  function finishGeminiCall(callType, status, tokenCount = 0) {
+  function finishClaudeCall(callType, status, tokenCount = 0) {
     const todayKey = getTodayKey();
     const now = new Date().toISOString();
     const nowTime = new Date(now).getTime();
@@ -2226,13 +2225,13 @@ export default function App() {
 
       bitmap.close?.();
 
-      if (isGeminiConfigured) {
+      if (isClaudeConfigured) {
         try {
           await ensureScanAuth();
           const compressedFile = await compressImage(file);
           const base64 = await encodeFileToBase64(compressedFile);
-          beginGeminiCall("Library card scan");
-          const result = await generateGeminiContent([
+          beginClaudeCall("Library card scan");
+          const result = await generateClaudeContent([
             {
               role: "user",
               parts: [
@@ -2258,18 +2257,18 @@ Do not include explanations.
             maxOutputTokens: 512,
             responseMimeType: "application/json",
           }, "Library card scan");
-          const parsed = safeParseJson(getGeminiText(result));
+          const parsed = safeParseJson(getClaudeText(result));
           detectedLibraryName = sanitizeLibraryCardName(parsed?.libraryName);
           barcodeValue =
             barcodeValue || sanitizeLibraryCardNumber(parsed?.cardNumber);
-          finishGeminiCall(
+          finishClaudeCall(
             "Library card scan",
             "Success",
             getTotalTokenCount(result)
           );
         } catch (ocrErr) {
           console.error("Library card text scan failed:", ocrErr);
-          finishGeminiCall("Library card scan", "Failed");
+          finishClaudeCall("Library card scan", "Failed");
         }
       }
 
@@ -2372,7 +2371,7 @@ Do not include explanations.
       setError("You are offline. Scans are temporarily disabled.");
       return;
     }
-    if (!isGeminiConfigured) {
+    if (!isClaudeConfigured) {
       setError("Firebase is not configured yet.");
       return;
     }
@@ -2411,10 +2410,10 @@ Do not include explanations.
       const compressedFile = await compressImage(file);
       const base64 = await encodeFileToBase64(compressedFile);
       recordLocalScanUsage(quotaUser);
-      beginGeminiCall("Bookshelf scan");
+      beginClaudeCall("Bookshelf scan");
       geminiCallStarted = true;
 
-      const result = await generateGeminiContent([
+      const result = await generateClaudeContent([
         {
           role: "user",
           parts: [
@@ -2483,12 +2482,12 @@ Important:
         responseMimeType: "application/json",
       }, "Bookshelf scan");
 
-      const text = getGeminiText(result);
+      const text = getClaudeText(result);
 
       const parsed = safeParseJson(text);
 
       if (!parsed?.books || !Array.isArray(parsed.books)) {
-        throw new Error("No books returned from Gemini");
+        throw new Error("No books returned from Claude");
       }
 
       const scannedBooks = parsed.books.map(enrichScannedBook);
@@ -2499,7 +2498,7 @@ Important:
         createdAt: new Date().toISOString(),
         imageName: file.name || "bookshelf image",
         bookCount: scannedBooks.length,
-        provider: result.provider || "gemini",
+        provider: result.provider || "claude",
         model: result.model || MODEL_NAME,
         promptTokens: promptTokenCount,
         totalTokens: totalTokenCount,
@@ -2518,17 +2517,17 @@ Important:
             size: Number(file.size || 0),
           },
           model: result.model || MODEL_NAME,
-          provider: result.provider || "gemini",
+          provider: result.provider || "claude",
           promptTokens: promptTokenCount,
           totalTokens: totalTokenCount,
           scannedAtLocalDate: getTodayKey(),
         });
       }
-      finishGeminiCall("Bookshelf scan", "Success", totalTokenCount);
+      finishClaudeCall("Bookshelf scan", "Success", totalTokenCount);
     } catch (err) {
       console.error("SCAN ERROR:", err);
       if (geminiCallStarted) {
-        finishGeminiCall("Bookshelf scan", "Failed");
+        finishClaudeCall("Bookshelf scan", "Failed");
       }
       setError(getFriendlyScanError(err));
     } finally {
@@ -5155,7 +5154,7 @@ Important:
   async function handleVibeAiAnalysis(mode, photoFile = null) {
     if (!checkScanLimit()) return;
     incrementScanCount();
-    if (!isGeminiConfigured) {
+    if (!isClaudeConfigured) {
       setVibeStatus("AI is not configured.");
       return;
     }
@@ -5253,15 +5252,15 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
         }];
       }
 
-      beginGeminiCall("Vibe personality");
-      const result = await generateGeminiContent(
+      beginClaudeCall("Vibe personality");
+      const result = await generateClaudeContent(
         [{ role: "user", parts }],
         { maxOutputTokens: 2048 },
         "Vibe personality"
       );
-      finishGeminiCall("Vibe personality", "Success", getTotalTokenCount(result));
+      finishClaudeCall("Vibe personality", "Success", getTotalTokenCount(result));
 
-      const parsed = safeParseJson(getGeminiText(result));
+      const parsed = safeParseJson(getClaudeText(result));
       if (!parsed?.personalityTitle) {
         setVibeStatus("AI couldn't read that. Try again with a clearer photo or more books.");
         setVibeAiLoading("");
@@ -5293,7 +5292,7 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
       }
     } catch (err) {
       console.error("Vibe AI analysis failed:", err);
-      finishGeminiCall("Vibe personality", "Failed");
+      finishClaudeCall("Vibe personality", "Failed");
       setVibeStatus("Analysis failed. Check your connection and try again.");
     } finally {
       setVibeAiLoading("");
@@ -6016,7 +6015,7 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
                     title:
                       similarBooksView === "shelf"
                         ? "Similar books on this shelf"
-                        : "Similar books in general",
+                        : "Recommendations for you",
                     meta: `${
                       similarBooksView === "shelf"
                         ? shelfSimilarBooks.length

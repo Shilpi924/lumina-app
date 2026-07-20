@@ -13,7 +13,7 @@ export function getTotalTokenCount(result) {
   );
 }
 
-export function getGeminiText(result) {
+export function getClaudeText(result) {
   return (
     result?.text ||
     result?.candidates?.[0]?.content?.parts?.[0]?.text ||
@@ -21,17 +21,17 @@ export function getGeminiText(result) {
   );
 }
 
-export async function generateGeminiContent(
+export async function generateClaudeContent(
   contents,
   generationConfig = {},
-  callType = "Gemini call",
+  callType = "Claude call",
   routing = {}
 ) {
   if (!cloudFunctions) {
     throw new Error("Firebase Functions is not configured.");
   }
 
-  const callable = httpsCallable(cloudFunctions, "generateGeminiContent");
+  const callable = httpsCallable(cloudFunctions, "generateClaudeContent");
   const response = await callable({ contents, generationConfig, callType, routing });
 
   return response.data;
@@ -55,7 +55,7 @@ export function getFriendlyScanError(error) {
     return "Lumina could not reach the scan service. Check your connection and try again.";
   }
   if (lowerMessage.includes("api key") || lowerMessage.includes("key not valid")) {
-    return "Gemini is not configured on the server. Check the Firebase Function secret.";
+    return "Claude is not configured on the server. Check the Firebase Function secret.";
   }
   if (
     code.includes("admin-restricted-operation") ||
@@ -65,13 +65,13 @@ export function getFriendlyScanError(error) {
     return "Guest scanning needs Anonymous sign-in enabled in Firebase Authentication. Open Firebase Console > Authentication > Sign-in method, then enable Anonymous.";
   }
   if (lowerMessage.includes("quota") || lowerMessage.includes("rate limit") || code.includes("resource-exhausted")) {
-    return "Gemini quota or rate limit was reached. Lumina will try Claude fallback when Gemini reports quota exhaustion.";
+    return "Claude quota or rate limit was reached. Try again later.";
   }
   if (lowerMessage.includes("too large")) {
     return "That photo is too large. Try a smaller or cropped bookshelf photo.";
   }
   if (lowerMessage.includes("permission") || lowerMessage.includes("forbidden") || code.includes("failed-precondition")) {
-    return message || "Gemini rejected this request. Check that the API key allows the Gemini API.";
+    return message || "Claude rejected this request. Check that the API key allows the Anthropic Messages API.";
   }
   if (code.includes("internal") && lowerMessage === "internal") {
     return "The scan service hit an internal error. Try again once; if it repeats, check Firebase Function logs.";

@@ -1,33 +1,14 @@
 import admin from 'firebase-admin';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { defineSecret, defineString } from 'firebase-functions/params';
+import { defineSecret } from 'firebase-functions/params';
 
 admin.initializeApp();
 
-const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
 const googleBooksApiKey = defineSecret('GOOGLE_BOOKS_API_KEY');
-const geminiCheapModel = defineString('GEMINI_MODEL_CHEAP', {
-  default: 'gemini-2.5-flash-lite',
-});
-const geminiBalancedModel = defineString('GEMINI_MODEL_BALANCED', {
-  default: 'gemini-2.5-flash',
-});
-const geminiStrongModel = defineString('GEMINI_MODEL_STRONG', {
-  default: 'gemini-2.5-pro',
-});
-const claudeCheapModel = defineString('CLAUDE_MODEL_CHEAP', {
-  default: 'claude-haiku-4-5',
-});
-const claudeBalancedModel = defineString('CLAUDE_MODEL_BALANCED', {
-  default: 'claude-haiku-4-5',
-});
-const claudeStrongModel = defineString('CLAUDE_MODEL_STRONG', {
-  default: 'claude-haiku-4-5',
-});
+const CLAUDE_MODEL = 'claude-haiku-4-5';
 const API_USAGE_COLLECTION = 'developerApiUsage';
 const API_USAGE_EVENTS_COLLECTION = 'developerApiUsageEvents';
-const GEMINI_QUOTA_COLLECTION = 'geminiQuotaStatus';
 
 function getTodayKey() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -64,18 +45,6 @@ function normalizeRoutingHints(rawRouting = {}) {
     requiresVision: Boolean(rawRouting?.requiresVision),
     requiresJson: Boolean(rawRouting?.requiresJson),
   };
-}
-
-function getGeminiModelForTier(modelTier) {
-  if (modelTier === 'cheap') return geminiCheapModel.value();
-  if (modelTier === 'strong') return geminiStrongModel.value();
-  return geminiBalancedModel.value();
-}
-
-function getClaudeModelForTier(modelTier) {
-  if (modelTier === 'cheap') return claudeCheapModel.value();
-  if (modelTier === 'strong') return claudeStrongModel.value();
-  return claudeBalancedModel.value();
 }
 
 function selectModelRoute({ contents, generationConfig = {}, callType = 'AI call', routing = {} }) {
@@ -191,62 +160,6 @@ function getRequestIp(request) {
     request?.rawRequest?.ip ||
     request?.rawRequest?.socket?.remoteAddress ||
     'Unknown IP'
-  );
-}
-
-// ─── Smart quota routing helpers ────────────────────────────────────────────
-
-/**
- * Returns true if Gemini has already hit a quota/rate-limit error today.
- * Subsequent calls in the same calendar day will skip Gemini entirely.
- */
-async function isGeminiQuotaExhaustedToday() {
-  try {
-    const db = admin.firestore();
-    const dateKey = getTodayKey();
-    const doc = await db.collection(GEMINI_QUOTA_COLLECTION).doc(dateKey).get();
-    return doc.exists && doc.data()?.exhausted === true;
-  } catch (err) {
-    console.warn('Could not read Gemini quota status:', err?.message);
-    return false; // safe default: still try Gemini
-  }
-}
-
-/**
- * Marks Gemini as quota-exhausted for the current calendar day.
- * All subsequent calls today will skip directly to Claude.
- */
-async function recordGeminiQuotaHit(reason) {
-  try {
-    const db = admin.firestore();
-    const dateKey = getTodayKey();
-    await db.collection(GEMINI_QUOTA_COLLECTION).doc(dateKey).set({
-      exhausted: true,
-      reason: reason || 'quota',
-      firstHitAt: admin.firestore.FieldValue.serverTimestamp(),
-      date: dateKey,
-    }, { merge: true });
-    console.info(`Gemini marked quota-exhausted for ${dateKey}. Claude will be used directly for the rest of the day.`);
-  } catch (err) {
-    console.warn('Could not record Gemini quota hit:', err?.message);
-  }
-}
-
-/** True if the Gemini error looks like a quota / rate-limit problem. */
-function isQuotaError(status, result) {
-  const code = String(result?.error?.status || result?.error?.code || '').toLowerCase();
-  const message = String(result?.error?.message || '').toLowerCase();
-  return (
-    status === 429 ||
-    status === 503 ||
-    code.includes('resource_exhausted') ||
-    code.includes('unavailable') ||
-    code.includes('quota') ||
-    message.includes('high demand') ||
-    message.includes('quota') ||
-    message.includes('rate limit') ||
-    message.includes('temporarily unavailable') ||
-    message.includes('resource exhausted')
   );
 }
 
@@ -386,32 +299,6 @@ async function saveGlobalUsage({
   ]);
 }
 
-async function callGemini({ contents, generationConfig, model }) {
-  const apiKey = geminiApiKey.value();
-  if (!apiKey) {
-    throw new HttpsError('failed-precondition', 'Gemini API key is not configured.');
-  }
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents, generationConfig }),
-    }
-  );
-  const responseText = await response.text();
-  let result;
-
-  try {
-    result = responseText ? JSON.parse(responseText) : undefined;
-  } catch {
-    result = undefined;
-  }
-
-  return { ok: response.ok, status: response.status, result, model };
-}
-
 async function callClaude({ contents, generationConfig, model }) {
   const apiKey = anthropicApiKey.value();
   if (!apiKey) {
@@ -453,16 +340,17 @@ async function callClaude({ contents, generationConfig, model }) {
   };
 }
 
-export const generateGeminiContent = onCall(
-  {
-    region: 'us-central1',
-    invoker: 'public',
-    secrets: [geminiApiKey, anthropicApiKey],
-    timeoutSeconds: 120,
-    memory: '512MiB',
-    minInstances: 1,
-  },
-  async (request) => {
+function createClaudeCallable() {
+  return onCall(
+    {
+      region: 'us-central1',
+      invoker: 'public',
+      secrets: [anthropicApiKey],
+      timeoutSeconds: 120,
+      memory: '512MiB',
+      minInstances: 0,
+    },
+    async (request) => {
     const { contents, generationConfig = {}, callType = 'AI call', routing = {} } = request.data || {};
 
     if (!request.auth?.uid && callType !== 'Chat') {
@@ -472,81 +360,16 @@ export const generateGeminiContent = onCall(
 
     const ipAddress = getRequestIp(request);
     const route = selectModelRoute({ contents, generationConfig, callType, routing });
-    const geminiModel = getGeminiModelForTier(route.modelTier);
-    const claudeModelName = getClaudeModelForTier(route.modelTier);
 
     if (!Array.isArray(contents) || contents.length === 0) {
       throw new HttpsError('invalid-argument', 'AI contents are required.');
     }
 
-    // ── Step 1: Check if Gemini quota was already hit today ──────────────────
-    const quotaAlreadyExhausted = await isGeminiQuotaExhaustedToday();
-
-    if (!quotaAlreadyExhausted) {
-      // ── Step 2: Try Gemini first ─────────────────────────────────────────
-      const geminiStartTime = Date.now();
-      const gemini = await callGemini({ contents, generationConfig, model: geminiModel });
-      const geminiDurationMs = Date.now() - geminiStartTime;
-
-      if (gemini.ok) {
-        await recordUsageSafely({
-          auth: request.auth,
-          callType,
-          status: 'Success',
-          result: gemini.result,
-          provider: 'gemini',
-          model: gemini.model,
-          modelTier: route.modelTier,
-          routeReason: route.routeReason,
-          ipAddress,
-          durationMs: geminiDurationMs,
-          inputCharCount: route.inputCharCount,
-          includesImage: route.includesImage,
-        });
-        return {
-          ...gemini.result,
-          provider: 'gemini',
-          model: gemini.model,
-          modelTier: route.modelTier,
-          routeReason: route.routeReason,
-        };
-      }
-
-      // ── Step 3: Gemini failed — record it, fall through to Claude ────────
-      const failReason = isQuotaError(gemini.status, gemini.result) ? 'quota' : 'error';
-      console.warn(`Gemini failed (${failReason}). Status: ${gemini.status}. Result: ${JSON.stringify(gemini.result)}`);
-      await recordUsageSafely({
-        auth: request.auth,
-        callType,
-        status: 'Failed',
-        result: gemini.result,
-        provider: 'gemini',
-        model: gemini.model,
-        modelTier: route.modelTier,
-        routeReason: route.routeReason,
-        ipAddress,
-        durationMs: geminiDurationMs,
-        inputCharCount: route.inputCharCount,
-        includesImage: route.includesImage,
-      });
-
-      // If this was a quota error, flag it so all subsequent calls today skip Gemini
-      if (failReason === 'quota') {
-        await recordGeminiQuotaHit(getProviderErrorMessage('Gemini', gemini));
-      }
-
-      console.warn(`Gemini failed (${failReason}), falling back to Claude.`);
-    } else {
-      // ── Quota already hit today: skip Gemini, go straight to Claude ──────
-      console.info('Gemini quota exhausted for today — routing directly to Claude.');
-    }
-
-    // ── Step 4: Call Claude (fallback or direct) ─────────────────────────────
     const claudeStartTime = Date.now();
     const claude = await callClaude({
       contents,
       generationConfig: { ...generationConfig, _callType: callType },
-      model: claudeModelName,
+      model: CLAUDE_MODEL,
     });
     const claudeDurationMs = Date.now() - claudeStartTime;
 
@@ -557,9 +380,9 @@ export const generateGeminiContent = onCall(
         status: 'Failed',
         result: claude.result,
         provider: 'claude',
-        model: claude.model || claudeModelName,
+        model: claude.model || CLAUDE_MODEL,
         modelTier: route.modelTier,
-        routeReason: `${route.routeReason}:${quotaAlreadyExhausted ? 'gemini-quota-daily-skip' : 'gemini-failed-fallback'}`,
+        routeReason: route.routeReason,
         ipAddress,
         durationMs: claudeDurationMs,
         inputCharCount: route.inputCharCount,
@@ -567,7 +390,7 @@ export const generateGeminiContent = onCall(
       });
       throw new HttpsError(
         getProviderErrorCode(claude.status),
-        getProviderErrorMessage('Claude fallback', claude)
+        getProviderErrorMessage('Claude', claude)
       );
     }
 
@@ -579,24 +402,28 @@ export const generateGeminiContent = onCall(
       provider: 'claude',
       model: claude.model,
       modelTier: route.modelTier,
-      routeReason: `${route.routeReason}:${quotaAlreadyExhausted ? 'gemini-quota-daily-skip' : 'gemini-failed-fallback'}`,
+      routeReason: route.routeReason,
       ipAddress,
       durationMs: claudeDurationMs,
       inputCharCount: route.inputCharCount,
       includesImage: route.includesImage,
     });
 
-    const routeReason = quotaAlreadyExhausted ? 'gemini-quota-daily-skip' : 'gemini-failed-fallback';
     return {
       ...claude.result,
-      fallbackFrom: routeReason,
       modelTier: route.modelTier,
       routeReason: route.routeReason,
       provider: 'claude',
       model: claude.model,
     };
-  }
-);
+    }
+  );
+}
+
+export const generateClaudeContent = createClaudeCallable();
+
+// Compatibility endpoint for older app versions. It is intentionally Claude-only.
+export const generateGeminiContent = createClaudeCallable();
 
 export const searchGoogleBooks = onCall(
   {

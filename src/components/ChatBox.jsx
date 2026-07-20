@@ -138,7 +138,7 @@ export default function ChatBox({ readingList }) {
         { role: 'user', parts: [{ text: userMessage }] }
       ];
 
-      const callable = httpsCallable(cloudFunctions, "generateGeminiContent");
+      const callable = httpsCallable(cloudFunctions, "generateClaudeContent");
       const response = await callable({
         contents,
         callType: "Chat",

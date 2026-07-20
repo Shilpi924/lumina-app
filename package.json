@@ -1,7 +1,7 @@
 {
   "name": "bookcompass",
   "private": true,
-  "version": "1.0.19",
+  "version": "1.0.20",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,12 @@
     "android:open": "cap open android",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test:all": "npm run test:unit && npm run test:e2e",
+    "test": "npm run test:all",
+    "build:aab": "npm run test:all && npm run build && cap sync android && cd android && ./gradlew bundleRelease",
+    "prepare": "husky"
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.3.0",
@@ -22,7 +27,6 @@
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/filesystem": "^8.1.2",
-    "@google/genai": "^2.6.0",
     "@revenuecat/purchases-capacitor": "^13.2.0",
     "firebase": "^12.14.0",
     "localforage": "^1.10.0",
@@ -42,6 +46,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "happy-dom": "^20.10.6",
+    "husky": "^9.1.7",
     "vite": "^8.0.12",
     "vitest": "^4.1.9"
   }

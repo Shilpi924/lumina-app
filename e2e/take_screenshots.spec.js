@@ -2,10 +2,11 @@ import { test, expect } from '@playwright/test';
 
 test('capture screenshots for README', async ({ page }) => {
   // Go to app
-  await page.goto('http://localhost:5173/');
+  await page.goto('/');
   
-  // Wait for Lumina title
+  // Wait for Lumina title and loading screen
   await expect(page.getByRole('heading', { name: 'Lumina', exact: true }).first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Lumina is initializing...')).toBeHidden({ timeout: 10000 });
   
   // Go to Stash for Library View
   await page.getByRole('button', { name: 'Stash' }).click();

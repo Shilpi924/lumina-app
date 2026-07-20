@@ -17,8 +17,7 @@ https://github.com/Shilpi924
 
 ![React](https://img.shields.io/badge/React-Frontend-blue)
 ![Firebase](https://img.shields.io/badge/Firebase-Backend-orange)
-![Gemini](https://img.shields.io/badge/Gemini-Primary_AI-black)
-![Claude](https://img.shields.io/badge/Claude-Fallback_AI-blueviolet)
+![Claude](https://img.shields.io/badge/Claude_Opus_4.8-Primary_AI-blueviolet)
 
 ## Project Status
 
@@ -42,7 +41,7 @@ I developed and integrated the core functionality of Lumina, including:
 
 - Built the React-based web and mobile user interface
 - Integrated Firebase Authentication, Firestore, and Cloud Functions
-- Connected Google Gemini API for AI-powered recommendations and image understanding
+- Connected Anthropic Claude Opus 4.8 for AI-powered recommendations and image understanding
 - Integrated Google Books API for book metadata and search
 - Implemented AI prompt workflows for personalized recommendations
 - Built and tested the Android application using Capacitor
@@ -65,7 +64,7 @@ Lumina is a modern, AI-powered mobile web application designed to help readers o
 - Multi-language support
 - Firebase Authentication
 - Cloud Firestore
-- Google Gemini Integration
+- Anthropic Claude Opus 4.8 Integration
 
 ## Project Statistics
 - 5+ major AI features

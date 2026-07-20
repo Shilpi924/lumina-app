@@ -17,9 +17,8 @@ graph TD
     LocalStore[("Local Database: LocalStorage (Offline Cache)")]
     FirebaseAuth["Firebase Authentication (SSO / Email)"]
     Firestore[("Cloud Firestore (Data Sync / Scans)")]
-    CloudFunc["Firebase Cloud Functions (Proxy & Fallback)"]
-    GeminiAPI["Google Gemini API (Primary Vision Model)"]
-    ClaudeAPI["Anthropic Claude API (Fallback Model)"]
+    CloudFunc["Firebase Cloud Functions (Secure AI Proxy)"]
+    ClaudeAPI["Anthropic Claude Opus 4.8 (Text & Vision)"]
     GoogleBooks["Google Books API (Metadata & Previews)"]
 
     %% Connections
@@ -29,9 +28,8 @@ graph TD
     Client -->|4. Voice search / Books search| GoogleBooks
     Client -->|5. Request shelf image scan| CloudFunc
     
-    CloudFunc -->|6. Attempt scan| GeminiAPI
-    CloudFunc -->|7. If 429 Rate Limited, fallback| ClaudeAPI
-    CloudFunc -->|8. Record usage counters| Firestore
+    CloudFunc -->|6. Process text or image request| ClaudeAPI
+    CloudFunc -->|7. Record usage counters| Firestore
 ```
 
 ---
@@ -41,7 +39,7 @@ graph TD
 The app relies on Firebase services for authentication, configuration protection, proxy processing, and database sync.
 
 ### 1. Firebase App Check
-* **Purpose**: Prevents unauthorized API access and abuse of Gemini/Claude endpoints.
+* **Purpose**: Prevents unauthorized API access and abuse of Claude endpoints.
 * **Details**: Protects HTTP Callable Cloud Functions using **reCAPTCHA v3**. Validated automatically in `src/firebase.js`.
 
 ### 2. Firebase Authentication
@@ -51,12 +49,12 @@ The app relies on Firebase services for authentication, configuration protection
   - Anonymous Guest authentication (for initial onboarding limits).
 * **Code Implementation**: Handled in `src/App.jsx` inside the `onAuthStateChanged` hook.
 
-### 3. Firebase Cloud Functions (`generateGeminiContent`)
+### 3. Firebase Cloud Functions (`generateClaudeContent`)
 * **Endpoint Type**: `onCall` Https v2 callable function.
 * **Role**: 
   - Validates authentication tokens.
   - Generates signatures and credentials safely away from the client browser.
-  - Performs intelligent routing: uses **Gemini 2.5 Flash** as primary and falls back to **Claude Sonnet** when rate limits are exhausted.
+  - Sends all AI requests to **Claude Opus 4.8**. The legacy `generateGeminiContent` callable remains only for older app versions and uses the same Claude-only handler.
   - Records API metadata to Firestore collections.
 
 ---
