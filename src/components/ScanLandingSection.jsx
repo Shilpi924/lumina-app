@@ -30,6 +30,7 @@ export default function ScanLandingSection({
   styles,
   user,
   userScanCount,
+  onToggleArMode,
 }) {
   return (
     <>
@@ -146,6 +147,23 @@ export default function ScanLandingSection({
           disabled={isOffline || loading}
         >
           {e("🏷️", "Scan Barcode")}
+        </button>
+
+        <button
+          type="button"
+          className="btn-press"
+          style={{
+            ...styles.uploadPhotoButton,
+            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+            margin: 0,
+            background: "var(--accent-bg)",
+            color: "var(--accent)",
+            border: "1px solid var(--accent-border)",
+          }}
+          onClick={onToggleArMode}
+          disabled={isOffline || loading}
+        >
+          {e("✨", "AR Shelf Sync")}
         </button>
 
         <button

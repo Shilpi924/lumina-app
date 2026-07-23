@@ -56,6 +56,7 @@ import ReadingDnaView from "./components/ReadingDnaView";
 import VoiceReviewSection from "./components/VoiceReviewSection";
 import ReadingJourneyTimeline from "./components/ReadingJourneyTimeline";
 import SceneVisualizerSection from "./components/SceneVisualizerSection";
+import ArShelfSync from "./components/ArShelfSync";
 import AppHeader from "./components/AppHeader";
 import BookDetailsModal from "./components/BookDetailsModal";
 import BookDetailSummaryGrid from "./components/BookDetailSummaryGrid";
@@ -1509,6 +1510,7 @@ export default function App() {
   const [readingJourney, setReadingJourney] = useState(null);
   const [scenes, setScenes] = useState({});
   const [dnaSubTab, setDnaSubTab] = useState("dna");
+  const [arModeActive, setArModeActive] = useState(false);
 
   const [fypBooks, setFypBooks] = useState([]);
   const [fypLoading, setFypLoading] = useState(false);
@@ -6047,6 +6049,7 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
             styles={styles}
             user={user}
             userScanCount={userScanCount}
+            onToggleArMode={() => setArModeActive(true)}
           />
           <ScanResultsSection
             books={books}
@@ -6058,6 +6061,16 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
             topBooks={topBooks}
           />
         </>
+      )}
+
+      {arModeActive && (
+        <ArShelfSync
+          onClose={() => setArModeActive(false)}
+          onAddBookToLibrary={addJourneyBookToStash}
+          isBookInReadingList={isBookInReadingList}
+          readingDna={readingDna}
+          readingList={readingList}
+        />
       )}
 
       {currentPage === "scan" && (
