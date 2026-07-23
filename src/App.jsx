@@ -1198,6 +1198,7 @@ function enrichScannedBook(book) {
       "Shelf location was not captured for this book. Scan the shelf again to get row, side, and order details.",
     scanConfidence: book?.scanConfidence || confidence.label,
     confidenceReason: book?.confidenceReason || confidence.reason,
+    scanType: String(book?.scanType || "").toLowerCase().includes("cover") ? "cover" : "spine",
     reviewed: Boolean(book?.reviewed),
   };
 }
@@ -2435,6 +2436,76 @@ Do not include explanations.
   }
 
 
+  async function verifyScannedBooksWithGoogleBooks(scannedBooks) {
+    if (!isFirebaseConfigured || !cloudFunctions) return scannedBooks;
+
+    const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
+    
+    const verificationPromises = scannedBooks.slice(0, 10).map(async (book) => {
+      try {
+        const query = `intitle:${book.title} ${book.author && book.author !== "Unknown" ? `inauthor:${book.author}` : ""}`;
+        const response = await searchGoogleBooks({ q: query, limit: 3 });
+        const items = response.data?.items || [];
+        if (items.length > 0) {
+          let bestMatch = null;
+          let bestScore = -1;
+          for (const item of items) {
+            const score = scoreGoogleBooksMatch(book, item);
+            if (score > bestScore) {
+              bestScore = score;
+              bestMatch = item;
+            }
+          }
+
+          if (bestScore >= 20 && bestMatch) {
+            const info = bestMatch.volumeInfo || {};
+            const categories = Array.isArray(info.categories) ? info.categories : [];
+            const authors = Array.isArray(info.authors) ? info.authors.join(", ") : (book.author || "Unknown");
+            return {
+              ...book,
+              title: info.title || book.title,
+              author: authors,
+              rating: Number(info.averageRating || book.rating || 4),
+              ratingSource: info.averageRating ? "Google Books" : "Estimated",
+              summary: info.description || book.summary || "",
+              genre: categories[0] || book.genre || "Book",
+              googleBooksId: bestMatch.id || "",
+              imageLinks: info.imageLinks || null,
+              scanConfidence: "Confidence: high",
+              confidenceReason: "Verified on Google Books",
+            };
+          }
+        }
+        
+        return {
+          ...book,
+          scanConfidence: "Confidence: medium",
+          confidenceReason: "Estimated from shelf visual evidence",
+        };
+      } catch (err) {
+        console.error("Google Books verification failed for:", book.title, err);
+        return {
+          ...book,
+          scanConfidence: "Confidence: low",
+          confidenceReason: "Lookup failed; verify spelling",
+        };
+      }
+    });
+
+    const verifiedScanned = await Promise.all(verificationPromises);
+    
+    if (scannedBooks.length > 10) {
+      const remaining = scannedBooks.slice(10).map(b => ({
+        ...b,
+        scanConfidence: "Confidence: low",
+        confidenceReason: "Skipped validation limit; verify metadata",
+      }));
+      return [...verifiedScanned, ...remaining];
+    }
+
+    return verifiedScanned;
+  }
+
   async function handleImage(file) {
     if (!file) return;
     if (!checkScanLimit()) return;
@@ -2514,7 +2585,8 @@ Return ONLY valid JSON in this exact format:
       "shelfPick": "Top Rated / Hidden Gem / Beginner Friendly / Popular / Educational",
       "shelfLocation": "Very detailed location in the photo, such as top row left side, middle row center, bottom row right side, third book from the left, leaning behind another book, or partly hidden",
       "scanConfidence": "Confidence: high / Confidence: medium / Confidence: low",
-      "confidenceReason": "Brief note about what readable text or visual evidence supports this identification"
+      "confidenceReason": "Brief note about what readable text or visual evidence supports this identification",
+      "scanType": "spine or cover"
     }
   ]
 }
@@ -2562,7 +2634,8 @@ Important:
         throw new Error("No books returned from Claude");
       }
 
-      const scannedBooks = parsed.books.map(enrichScannedBook);
+      const rawScannedBooks = parsed.books.map(enrichScannedBook);
+      const scannedBooks = await verifyScannedBooksWithGoogleBooks(rawScannedBooks);
       const promptTokenCount = getPromptTokenCount(result);
       const totalTokenCount = getTotalTokenCount(result);
       const scanEntry = {
@@ -3506,8 +3579,22 @@ Important:
         <h3 style={{ ...styles.cardTitle, color: theme.title }}>{book.title}</h3>
 
         {options.prefix !== "library" && options.prefix !== "saved-file" && (
-          <div style={styles.metaPillRow}>
+          <div style={{ ...styles.metaPillRow, display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
             <span style={styles.metaPill}>{confidence}</span>
+            {book.scanType && (
+              <span style={{
+                ...styles.metaPill,
+                background: book.scanType === "cover" ? "rgba(34, 197, 94, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                color: book.scanType === "cover" ? "#22c55e" : "#3b82f6",
+                border: `1px solid ${book.scanType === "cover" ? "rgba(34, 197, 94, 0.3)" : "rgba(59, 130, 246, 0.3)"}`,
+                padding: "2px 8px",
+                borderRadius: "12px",
+                fontSize: "12px",
+                fontWeight: "600"
+              }}>
+                {book.scanType === "cover" ? "📖 Cover" : "📑 Spine"}
+              </span>
+            )}
           </div>
         )}
         <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", margin: "8px 0" }}>
