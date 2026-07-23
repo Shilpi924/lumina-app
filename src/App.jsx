@@ -59,6 +59,8 @@ import SceneVisualizerSection from "./components/SceneVisualizerSection";
 import ArShelfSync from "./components/ArShelfSync";
 import SavedBooksPage from "./components/SavedBooksPage";
 import AccountPage from "./components/AccountPage";
+import DiscoverPage from "./components/DiscoverPage";
+import VibePage from "./components/VibePage";
 import AppHeader from "./components/AppHeader";
 import BookDetailsModal from "./components/BookDetailsModal";
 import BookDetailSummaryGrid from "./components/BookDetailSummaryGrid";
@@ -5021,6 +5023,26 @@ Important:
   }
 
   function renderDiscoverPage() {
+    return (
+      <DiscoverPage
+        savedFiles={savedFiles}
+        discoverIndex={discoverIndex}
+        setDiscoverIndex={setDiscoverIndex}
+        swipeHistory={swipeHistory}
+        setSwipeHistory={setSwipeHistory}
+        selectedDiscoverFolder={selectedDiscoverFolder}
+        setSelectedDiscoverFolder={setSelectedDiscoverFolder}
+        folders={folders}
+        getVisibleFolders={getVisibleFolders}
+        swipeDirection={swipeDirection}
+        bookFolders={bookFolders}
+        getBookKey={getBookKey}
+        handleRewind={handleRewind}
+        handleDiscoverDelete={handleDiscoverDelete}
+        handleSwipe={handleSwipe}
+        styles={styles}
+      />
+    );
     const discoverBooks = savedFiles.map(f => f.payload?.catalogBook).filter(Boolean);
     const currentBook = discoverBooks[discoverIndex];
     const visibleFolders = getVisibleFolders(folders);
@@ -5328,6 +5350,27 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
   }
 
   function renderVibePage() {
+    return (
+      <VibePage
+        user={user}
+        vibeAiLoading={vibeAiLoading}
+        handleVibeAiAnalysis={handleVibeAiAnalysis}
+        vibePhotoInputRef={vibePhotoInputRef}
+        savedFiles={savedFiles}
+        readingList={readingList}
+        books={books}
+        scanHistory={scanHistory}
+        vibeAiResult={vibeAiResult}
+        vibeAiPreviews={vibeAiPreviews}
+        isUserPlus={isUserPlus}
+        isAnonymousPlus={isAnonymousPlus}
+        selectedPlusPlan={selectedPlusPlan}
+        handleStartPlusPurchase={handleStartPlusPurchase}
+        PLUS_PLANS={PLUS_PLANS}
+        vibeStatus={vibeStatus}
+        styles={styles}
+      />
+    );
     if (!user) {
       return (
         <section style={styles.vibePage}>
