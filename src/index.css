@@ -1098,3 +1098,15 @@ code {
   --border: rgba(6, 182, 212, 0.1);
   --body-bg: linear-gradient(180deg, #ffffff 0%, #f8fefe 50%, #f0fdfa 100%);
 }
+
+@keyframes toastSlideDown {
+  0% {
+    transform: translate(-50%, -40px);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+

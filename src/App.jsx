@@ -1512,6 +1512,19 @@ export default function App() {
   const [scenes, setScenes] = useState({});
   const [dnaSubTab, setDnaSubTab] = useState("dna");
   const [arModeActive, setArModeActive] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const showToast = useCallback((message, type = "info") => {
+    setToast({ message, type });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const [fypBooks, setFypBooks] = useState([]);
   const [fypLoading, setFypLoading] = useState(false);
@@ -2793,7 +2806,7 @@ Important:
     event.preventDefault();
     const title = manualBookForm.title.trim();
     if (!title) {
-      alert("Please enter a book title.");
+      showToast("Please enter a book title.", "error");
       return;
     }
 
@@ -4862,7 +4875,7 @@ Important:
 
   async function handleStartPlusPurchase(plan) {
     if (!user) {
-      alert("Hey bestie! ✨ You get 3 free scans a day without an account. Log in to snag 10 free daily scans, or unlock Beta Plus (when logged in) for literally unlimited scans! Limits reset at midnight. 🌙");
+      showToast("Hey bestie! ✨ Log in to unlock Beta Plus for unlimited scans! 🌙", "info");
       setCurrentPage("account");
       return;
     }
@@ -4877,7 +4890,7 @@ Important:
       } catch (e) {
         console.error("Purchase failed", e);
         if (!e.userCancelled) {
-          alert("Purchase failed. Please try again.");
+          showToast("Purchase failed. Please try again.", "error");
         }
         return;
       }
@@ -4904,7 +4917,7 @@ Important:
     if (IS_BETA_MODE) {
       setBetaUnlockPopupOpen(true);
     } else {
-      alert("Lumina Plus unlocked successfully!");
+      showToast("Lumina Plus unlocked successfully! 🎉", "success");
     }
   }
 
@@ -7192,6 +7205,38 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
         </div>
       </nav>
       <ChatBox user={user} readingList={readingList} savedFiles={savedFiles} />
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: toast.type === "error" ? "rgba(239, 68, 68, 0.95)" : toast.type === "success" ? "rgba(16, 185, 129, 0.95)" : "rgba(37, 99, 235, 0.95)",
+            color: "#fff",
+            padding: "12px 24px",
+            borderRadius: "30px",
+            boxShadow: "0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1)",
+            fontSize: "14px",
+            fontWeight: "700",
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            backdropFilter: "blur(8px)",
+            border: "1px solid rgba(255,255,255,0.15)",
+            animation: "toastSlideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+            maxWidth: "90%",
+            textAlign: "center",
+          }}
+        >
+          <span>{toast.type === "error" ? "❌" : toast.type === "success" ? "✓" : "✨"}</span>
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }
