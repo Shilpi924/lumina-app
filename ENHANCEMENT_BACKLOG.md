@@ -5,16 +5,16 @@ This backlog groups the next improvements for Lumina by priority and keeps each 
 ## P1
 
 ### 1. Break up `src/App.jsx`
-- Status: In progress (App Header, Account Page, and Stash Page extracted)
+- Status: In progress (App Header, Account, Stash, Discover, and Vibe Pages extracted)
 - Goal: Reduce the size and risk of `src/App.jsx` by extracting page-level and shell-level UI into focused components.
 - Planned slices:
   - [x] Extract app header and hero
   - [x] Extract account page shell (AccountPage.jsx)
   - [x] Extract saved/stash page shell (SavedBooksPage.jsx)
+  - [x] Extract discover/vibe page shells (DiscoverPage.jsx, VibePage.jsx)
   - [ ] Extract scan landing section
-  - [ ] Extract discover/vibe page shells
 - Success criteria:
-  - `src/App.jsx` becomes meaningfully smaller (decreased by ~600 lines)
+  - `src/App.jsx` becomes meaningfully smaller (decreased by ~1,200 lines)
   - Extracted components are prop-driven and testable
   - No behavior changes in navigation or scan flows
 
@@ -88,5 +88,4 @@ This backlog groups the next improvements for Lumina by priority and keeps each 
 
 ## Current slice
 
-Completed refactoring SavedBooksPage and AccountPage out of `src/App.jsx`, and integrated Toast notification systems to replace raw alert popups. Next slice: extract discover/vibe page shells from `src/App.jsx`.
-
+Completed refactoring SavedBooksPage, AccountPage, DiscoverPage, and VibePage out of `src/App.jsx`, and integrated Toast notification systems to replace raw alert popups. Next slice: extract scan landing section from `src/App.jsx`.
