@@ -52,6 +52,10 @@ import {
   logEvent,
 } from "./firebase";
 import ChatBox from "./components/ChatBox";
+import ReadingDnaView from "./components/ReadingDnaView";
+import VoiceReviewSection from "./components/VoiceReviewSection";
+import ReadingJourneyTimeline from "./components/ReadingJourneyTimeline";
+import SceneVisualizerSection from "./components/SceneVisualizerSection";
 import AppHeader from "./components/AppHeader";
 import BookDetailsModal from "./components/BookDetailsModal";
 import BookDetailSummaryGrid from "./components/BookDetailSummaryGrid";
@@ -1500,6 +1504,11 @@ export default function App() {
   } = useLibrary({ setSaveStatus });
   const [idleBursts, setIdleBursts] = useState([]);
   const [savedArtActive, setSavedArtActive] = useState(false);
+  const [readingDna, setReadingDna] = useState(null);
+  const [reviews, setReviews] = useState({});
+  const [readingJourney, setReadingJourney] = useState(null);
+  const [scenes, setScenes] = useState({});
+  const [dnaSubTab, setDnaSubTab] = useState("dna");
 
   const [fypBooks, setFypBooks] = useState([]);
   const [fypLoading, setFypLoading] = useState(false);
@@ -1592,7 +1601,7 @@ export default function App() {
     async function initStorage() {
       const isMigrated = await localforage.getItem("isMigratedToForage");
       if (!isMigrated) {
-        for (const key of ["readingList", "savedPreviewFiles", "scanHistory", "folders", "bookFolders", "bookTags", "appTheme", "disableEmojis", "luminaAnonymousScanCount", "luminaIsPlusActive", "libraryCards"]) {
+        for (const key of ["readingList", "savedPreviewFiles", "scanHistory", "folders", "bookFolders", "bookTags", "appTheme", "disableEmojis", "luminaAnonymousScanCount", "luminaIsPlusActive", "libraryCards", "readingDna", "reviews", "readingJourney", "scenes"]) {
           const val = localStorage.getItem(key);
           if (val !== null) {
             try {
@@ -1607,7 +1616,7 @@ export default function App() {
 
       const [
          rl, svf, sh, fldr, bfldr, btgs, 
-         appT, disE, anonCount, anonPlus, lc, storedLastDate, storedUserPlus
+         appT, disE, anonCount, anonPlus, lc, storedLastDate, storedUserPlus, storedReadingDna, storedReviews, storedJourney, storedScenes
       ] = await Promise.all([
          localforage.getItem("readingList"),
          localforage.getItem("savedPreviewFiles"),
@@ -1622,6 +1631,10 @@ export default function App() {
          localforage.getItem("libraryCards"),
          localforage.getItem("luminaLastScanDate"),
          localforage.getItem("luminaIsUserPlusActive"),
+         localforage.getItem("readingDna"),
+         localforage.getItem("reviews"),
+         localforage.getItem("readingJourney"),
+         localforage.getItem("scenes"),
       ]);
       
       if (rl) setReadingList(rl);
@@ -1637,6 +1650,10 @@ export default function App() {
       if (storedUserPlus === true) setIsUserPlus(true); // Restore Plus status immediately without waiting for Firestore
       if (lc) setLibraryCards(normalizeLibraryCards(lc));
       if (storedLastDate) setLastScanDate(storedLastDate);
+      if (storedReadingDna) setReadingDna(storedReadingDna);
+      if (storedReviews) setReviews(storedReviews);
+      if (storedJourney) setReadingJourney(storedJourney);
+      if (storedScenes) setScenes(storedScenes);
 
       setIsStoreLoaded(true);
     }
@@ -1697,6 +1714,22 @@ export default function App() {
   useEffect(() => {
     writeStoredJson("readingList", readingList);
   }, [readingList]);
+
+  useEffect(() => {
+    writeStoredJson("readingDna", readingDna);
+  }, [readingDna]);
+
+  useEffect(() => {
+    writeStoredJson("reviews", reviews);
+  }, [reviews]);
+
+  useEffect(() => {
+    writeStoredJson("readingJourney", readingJourney);
+  }, [readingJourney]);
+
+  useEffect(() => {
+    writeStoredJson("scenes", scenes);
+  }, [scenes]);
 
   useEffect(() => {
     writeStoredJson("savedPreviewFiles", savedFiles);
@@ -1801,8 +1834,12 @@ export default function App() {
       bookFolders,
       bookTags,
       libraryCards,
+      readingDna,
+      reviews,
+      readingJourney,
+      scenes,
     };
-  }, [readingList, savedFiles, filters, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards]);
+  }, [readingList, savedFiles, filters, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards, readingDna, reviews, readingJourney, scenes]);
 
   useEffect(() => {
     if (
@@ -1954,6 +1991,18 @@ export default function App() {
           setBookFolders(mergedBookFolders);
           setBookTags(mergedBookTags);
           setLibraryCards(mergedLibraryCards);
+          if (cloudState.readingDna) {
+            setReadingDna(cloudState.readingDna);
+          }
+          if (cloudState.reviews) {
+            setReviews(cloudState.reviews);
+          }
+          if (cloudState.readingJourney) {
+            setReadingJourney(cloudState.readingJourney);
+          }
+          if (cloudState.scenes) {
+            setScenes(cloudState.scenes);
+          }
           setGeminiUsage(
             mergeGeminiUsage(
               cloudState.geminiUsage,
@@ -1991,13 +2040,17 @@ export default function App() {
         bookFolders,
         bookTags,
         libraryCards,
+        readingDna,
+        reviews,
+        readingJourney,
+        scenes,
       }).catch((err) => {
         console.error("Could not save user app data:", err);
       });
     }, 500);
 
     return () => window.clearTimeout(saveTimer);
-  }, [user, readingList, savedFiles, filters, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards]);
+  }, [user, readingList, savedFiles, filters, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards, readingDna, reviews, readingJourney, scenes]);
 
   useEffect(() => {
     previewCacheRef.current = previewCache;
@@ -2777,6 +2830,38 @@ Important:
     });
 
     closeManualBookModal();
+  }
+
+  function addJourneyBookToStash(book) {
+    const newBook = {
+      ...book,
+      authorBio: "AI Suggested Reading Journey book.",
+      rating: 4.5,
+      ratingSource: "Estimated",
+      whyRead: book.connectingThread,
+      summary: book.whyNow,
+      shelfPick: "AI Journey",
+      shelfLocation: "AI Roadmap",
+      scanConfidence: "high confidence",
+      confidenceReason: "AI suggested roadmap book.",
+      reviewed: true,
+    };
+
+    setBooks((current) => [newBook, ...current]);
+    
+    setReadingList((currentList) => {
+      const bookKey = getBookKey(newBook);
+      if (currentList.some((b) => getBookKey(b) === bookKey)) {
+        return currentList;
+      }
+      return [{ ...newBook, savedAt: new Date().toISOString() }, ...currentList];
+    });
+
+    setSaveStatus({
+      message: `Journey book "${newBook.title}" added to stash.`,
+      bookKey: getSavedFileKey(newBook.title, "favorite"),
+      type: "favorite",
+    });
   }
 
   const AVAILABLE_TAGS = ["🌶️", "😭", "✨", "🤯", "💀", "📖", "🎧"];
@@ -5871,6 +5956,62 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
       {currentPage === "saved" && renderSavedBooksPage()}
       {currentPage === "vibe" && renderVibePage()}
       {currentPage === "discover" && renderDiscoverPage()}
+      {currentPage === "dna" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px", width: "100%" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: "10px", padding: "0 16px 8px", borderBottom: "1px solid var(--border)", margin: "0 auto 10px", width: "fit-content" }}>
+            <button
+              onClick={() => setDnaSubTab("dna")}
+              style={{
+                padding: "8px 16px",
+                borderRadius: "20px",
+                border: "none",
+                background: dnaSubTab === "dna" ? "var(--accent)" : "transparent",
+                color: dnaSubTab === "dna" ? "#fff" : "var(--text)",
+                fontWeight: "700",
+                fontSize: "14px",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+            >
+              🧬 Taste DNA
+            </button>
+            <button
+              onClick={() => setDnaSubTab("journey")}
+              style={{
+                padding: "8px 16px",
+                borderRadius: "20px",
+                border: "none",
+                background: dnaSubTab === "journey" ? "var(--accent)" : "transparent",
+                color: dnaSubTab === "journey" ? "#fff" : "var(--text)",
+                fontWeight: "700",
+                fontSize: "14px",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+            >
+              🧭 Reading Journey
+            </button>
+          </div>
+
+          {dnaSubTab === "dna" ? (
+            <ReadingDnaView
+              readingList={readingList}
+              readingDna={readingDna}
+              onUpdateDna={setReadingDna}
+              user={user}
+            />
+          ) : (
+            <ReadingJourneyTimeline
+              readingList={readingList}
+              readingDna={readingDna}
+              readingJourney={readingJourney}
+              onUpdateJourney={setReadingJourney}
+              onAddBookToLibrary={addJourneyBookToStash}
+              isBookInReadingList={isBookInReadingList}
+            />
+          )}
+        </div>
+      )}
 
       {currentPage === "scan" && (
         <>
@@ -6005,6 +6146,58 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
                         {getContentGuidance(selectedBook)}
                       </p>
                     </div>
+                  ),
+                  style: styles.detailCollapse,
+                })}
+
+                {renderCollapsibleSection({
+                  id: "detailVoiceReview",
+                  title: "AI Voice Review & Journal 🎙️",
+                  meta: reviews[getBookKey(selectedBook)] ? `${"⭐".repeat(reviews[getBookKey(selectedBook)].rating)}` : "None",
+                  defaultOpen: false,
+                  children: (
+                    <VoiceReviewSection
+                      selectedBook={selectedBook}
+                      reviews={reviews}
+                      onSaveReview={(key, data) => {
+                        setReviews(prev => {
+                          const updated = { ...prev };
+                          if (data) {
+                            updated[key] = data;
+                          } else {
+                            delete updated[key];
+                          }
+                          return updated;
+                        });
+                      }}
+                      user={user}
+                    />
+                  ),
+                  style: styles.detailCollapse,
+                })}
+
+                {renderCollapsibleSection({
+                  id: "detailSceneVisualizer",
+                  title: "Scene Visualizer ✨",
+                  meta: scenes[getBookKey(selectedBook)] ? `${scenes[getBookKey(selectedBook)].length} Illustrations` : "None",
+                  defaultOpen: false,
+                  children: (
+                    <SceneVisualizerSection
+                      selectedBook={selectedBook}
+                      scenes={scenes}
+                      onSaveScene={(key, data) => {
+                        setScenes(prev => {
+                          const updated = { ...prev };
+                          if (data) {
+                            updated[key] = data;
+                          } else {
+                            delete updated[key];
+                          }
+                          return updated;
+                        });
+                      }}
+                      user={user}
+                    />
                   ),
                   style: styles.detailCollapse,
                 })}
@@ -7066,6 +7259,7 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
 	          ["scan", "⌕", "Scan", "var(--accent)", "var(--accent-bg)"],
 	          ["vibe", "✦", "Vibe", "var(--accent)", "var(--accent-bg)"],
 	          ["discover", "✨", "Discover", "var(--accent)", "var(--accent-bg)"],
+	          ["dna", "🧬", "DNA", "var(--accent)", "var(--accent-bg)"],
 	          ["saved", "▤", "Stash", "var(--accent)", "var(--accent-bg)"],
 	        ].map(([pageId, icon, label, accent, accentBg]) => {
           const isActive = currentPage === pageId;
@@ -7422,7 +7616,7 @@ const styles = {
   },
   bottomTabsInner: {
     display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
     gap: "10px",
     width: "100%",
     maxWidth: "1126px",
