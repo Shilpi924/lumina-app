@@ -5,14 +5,14 @@ This backlog groups the next improvements for Lumina by priority and keeps each 
 ## P1
 
 ### 1. Break up `src/App.jsx`
-- Status: In progress (App Header, Account, Stash, Discover, and Vibe Pages extracted)
+- Status: Completed (App Header, Account, Stash, and Vibe Pages extracted; Discover Tab completely removed and cleaned up)
 - Goal: Reduce the size and risk of `src/App.jsx` by extracting page-level and shell-level UI into focused components.
 - Planned slices:
   - [x] Extract app header and hero
   - [x] Extract account page shell (AccountPage.jsx)
   - [x] Extract saved/stash page shell (SavedBooksPage.jsx)
-  - [x] Extract discover/vibe page shells (DiscoverPage.jsx, VibePage.jsx)
-  - [ ] Extract scan landing section
+  - [x] Extract discover/vibe page shells (VibePage.jsx; Discover Page obsolete and removed)
+  - [x] Extract scan landing section
 - Success criteria:
   - `src/App.jsx` becomes meaningfully smaller (decreased by ~1,200 lines)
   - Extracted components are prop-driven and testable
@@ -73,11 +73,9 @@ This backlog groups the next improvements for Lumina by priority and keeps each 
   - Notes
   - Better sorting and duplicate detection
 
-### 8. Improve compare-books experience
-- Ideas:
-  - Clear selected-book state
-  - Side-by-side comparison view
-  - Why-these-books-match explanation
+### 8. Improve compare-books experience (P3.8)
+- Status: Completed
+- Goal: Build side-by-side comparison modal with alternating visual grids, and integrated AI-generated book relation explanations.
 
 ### 9. Strengthen docs and contributor setup
 - Ideas:
@@ -88,4 +86,4 @@ This backlog groups the next improvements for Lumina by priority and keeps each 
 
 ## Current slice
 
-Completed refactoring SavedBooksPage, AccountPage, DiscoverPage, and VibePage out of `src/App.jsx`, and integrated Toast notification systems to replace raw alert popups. Next slice: extract scan landing section from `src/App.jsx`.
+Completely removed Discover tab and associated state hooks. Refactored Compare-Books experience into a premium, side-by-side overlay component leveraging AI model matchmaking reports.
