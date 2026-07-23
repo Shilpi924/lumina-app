@@ -4531,7 +4531,7 @@ Important:
     );
 
     return (
-      <section style={{ ...styles.collapsibleSection, ...style }}>
+      <section key={id} style={{ ...styles.collapsibleSection, ...style }}>
         {headerAction ? (
           <div style={styles.collapsibleHeaderWithAction}>
             {headerButton}
@@ -5368,6 +5368,7 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
         handleStartPlusPurchase={handleStartPlusPurchase}
         PLUS_PLANS={PLUS_PLANS}
         vibeStatus={vibeStatus}
+        setCurrentPage={setCurrentPage}
         styles={styles}
       />
     );

@@ -17,6 +17,7 @@ export default function VibePage({
   handleStartPlusPurchase,
   PLUS_PLANS,
   vibeStatus,
+  setCurrentPage,
   styles,
 }) {
   if (!user) {
@@ -39,10 +40,7 @@ export default function VibePage({
           <button
             type="button"
             style={styles.authPrimaryButton}
-            onClick={() => {
-              // Direct navigation fallback is handled in parent
-              window.location.hash = "#account";
-            }}
+            onClick={() => setCurrentPage("account")}
           >
             Sign in to see your vibe
           </button>
