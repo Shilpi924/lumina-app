@@ -58,6 +58,7 @@ import ReadingJourneyTimeline from "./components/ReadingJourneyTimeline";
 import SceneVisualizerSection from "./components/SceneVisualizerSection";
 import ArShelfSync from "./components/ArShelfSync";
 import SavedBooksPage from "./components/SavedBooksPage";
+import AccountPage from "./components/AccountPage";
 import AppHeader from "./components/AppHeader";
 import BookDetailsModal from "./components/BookDetailsModal";
 import BookDetailSummaryGrid from "./components/BookDetailSummaryGrid";
@@ -3873,6 +3874,7 @@ Important:
   }
 
   function renderLoginPage() {
+    return null;
     const isSignUp = authMode === "signup";
     const accountUser = isSyncUser(user) ? user : null;
 
@@ -4859,14 +4861,50 @@ Important:
 
   function renderAccountPage() {
     return (
-      <>
-        {renderLoginPage()}
-        {renderLibraryCards()}
-        {canOpenDeveloper && renderDeveloperPage()}
-        <div style={{ marginTop: '32px', textAlign: 'center', color: 'var(--text-l)', fontSize: '12px', paddingBottom: '24px' }}>
-          &copy; 2026 Shilpi Sharma. All rights reserved.
-        </div>
-      </>
+      <AccountPage
+        user={user}
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        authLoading={authLoading}
+        setAuthLoading={setAuthLoading}
+        authMessage={authMessage}
+        setAuthMessage={setAuthMessage}
+        setUser={setUser}
+        db={db}
+        auth={auth}
+        styles={styles}
+        handleGoogleLogin={handleGoogleLogin}
+        handleAppleLogin={handleAppleLogin}
+        handleAuthSubmit={handleAuthSubmit}
+        handleForgotPassword={handleForgotPassword}
+        handleSignOut={handleSignOut}
+        handleResendVerification={handleResendVerification}
+        handleRefreshVerification={handleRefreshVerification}
+        isSyncUser={isSyncUser}
+        getUserDisplayName={getUserDisplayName}
+        CARTOONS={CARTOONS}
+        setAvatarModalOpen={setAvatarModalOpen}
+        setAvatarBgColor={setAvatarBgColor}
+        setAvatarAccentColor={setAvatarAccentColor}
+        setAvatarAccessory={setAvatarAccessory}
+        setAvatarEyeSize={setAvatarEyeSize}
+        setAvatarMouth={setAvatarMouth}
+        setAvatarBgImage={setAvatarBgImage}
+        disableEmojis={disableEmojis}
+        setDisableEmojis={setDisableEmojis}
+        isFirebaseConfigured={isFirebaseConfigured}
+        isAndroidApp={isAndroidApp}
+        isAndroidGoogleSsoConfigured={isAndroidGoogleSsoConfigured}
+        authForm={authForm}
+        updateAuthForm={updateAuthForm}
+        MAX_DISPLAY_NAME_LENGTH={MAX_DISPLAY_NAME_LENGTH}
+        GoogleIcon={GoogleIcon}
+        AppleIcon={AppleIcon}
+        renderThemeSelector={renderThemeSelector}
+        renderLibraryCards={renderLibraryCards}
+        canOpenDeveloper={canOpenDeveloper}
+        renderDeveloperPage={renderDeveloperPage}
+      />
     );
   }
 
