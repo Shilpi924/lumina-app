@@ -18,13 +18,6 @@ export function useAppUI() {
   const [compare, setCompare] = useState([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [previewModal, setPreviewModal] = useState(null);
-  
-  // Discover feed UI
-  const [discoverIndex, setDiscoverIndex] = useState(0);
-  const [swipeHistory, setSwipeHistory] = useState([]);
-  const [swipeDirection, setSwipeDirection] = useState(null);
-  const [selectedDiscoverFolder, setSelectedDiscoverFolder] = useState("Want to read");
-
   // Modals & prompts
   const [manualBookForm, setManualBookForm] = useState({
     title: "",
@@ -97,10 +90,6 @@ export function useAppUI() {
     libraryCardLoginPromptOpen, setLibraryCardLoginPromptOpen,
     scanLimitPromptOpen, setScanLimitPromptOpen,
     openSections, setOpenSections,
-    discoverIndex, setDiscoverIndex,
-    swipeHistory, setSwipeHistory,
-    swipeDirection, setSwipeDirection,
-    selectedDiscoverFolder, setSelectedDiscoverFolder,
     closeFolderModal,
     closeTagModal,
     openManualBookModal,

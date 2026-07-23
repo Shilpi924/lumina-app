@@ -59,8 +59,8 @@ import SceneVisualizerSection from "./components/SceneVisualizerSection";
 import ArShelfSync from "./components/ArShelfSync";
 import SavedBooksPage from "./components/SavedBooksPage";
 import AccountPage from "./components/AccountPage";
-import DiscoverPage from "./components/DiscoverPage";
 import VibePage from "./components/VibePage";
+import CompareBooksModal from "./components/CompareBooksModal";
 import AppHeader from "./components/AppHeader";
 import BookDetailsModal from "./components/BookDetailsModal";
 import BookDetailSummaryGrid from "./components/BookDetailSummaryGrid";
@@ -1467,10 +1467,6 @@ export default function App() {
     libraryCardLoginPromptOpen, setLibraryCardLoginPromptOpen,
     scanLimitPromptOpen, setScanLimitPromptOpen,
     openSections, setOpenSections,
-    discoverIndex, setDiscoverIndex,
-    swipeHistory, setSwipeHistory,
-    swipeDirection, setSwipeDirection,
-    selectedDiscoverFolder, setSelectedDiscoverFolder,
     closeFolderModal,
     closeTagModal,
     openManualBookModal,
@@ -5048,198 +5044,12 @@ Important:
     }
   }
 
-  function handleSwipe(direction, book) {
-    setSwipeHistory((prev) => [...prev, { index: discoverIndex, action: direction, book, prevFolder: bookFolders[getBookKey(book)] }]);
-    setSwipeDirection(direction);
-    
-    if (direction === "right") {
-      setBookFolders((prev) => ({
-        ...prev,
-        [getBookKey(book)]: selectedDiscoverFolder,
-      }));
-    } else if (direction === "left") {
-      const currentFolder = bookFolders[getBookKey(book)] || "Want to read";
-      if (currentFolder === selectedDiscoverFolder) {
-        setBookFolders((prev) => {
-          const next = { ...prev };
-          delete next[getBookKey(book)];
-          return next;
-        });
-      }
-    }
-    
-    setTimeout(() => {
-      setSwipeDirection(null);
-      setDiscoverIndex(i => i + 1);
-    }, 300);
-  }
-
-  function handleRewind() {
-    if (swipeHistory.length === 0) return;
-    const lastAction = swipeHistory[swipeHistory.length - 1];
-    setSwipeHistory((prev) => prev.slice(0, -1));
-    setDiscoverIndex(lastAction.index);
-    
-    setBookFolders((prev) => {
-      const next = { ...prev };
-      if (lastAction.prevFolder) {
-        next[getBookKey(lastAction.book)] = lastAction.prevFolder;
-      } else {
-        delete next[getBookKey(lastAction.book)];
-      }
-      return next;
-    });
-  }
-
-  function handleDiscoverDelete(book) {
-    const savedBook = getSavedBookGroups(savedFiles).find(
-      (group) => getBookKey(group.catalogBook) === getBookKey(book)
-    );
-    if (!savedBook) return;
-
-    setSwipeDirection("left");
-    deleteSavedBook(savedBook);
-
-    setTimeout(() => {
-      setSwipeDirection(null);
-      setDiscoverIndex((currentIndex) => {
-        const nextLength = Math.max(0, savedFiles.length - 1);
-        return Math.min(currentIndex, Math.max(0, nextLength - 1));
-      });
-    }, 300);
-  }
+  function handleSwipe() {}
+  function handleRewind() {}
+  function handleDiscoverDelete() {}
 
   function renderDiscoverPage() {
-    return (
-      <DiscoverPage
-        savedFiles={savedFiles}
-        discoverIndex={discoverIndex}
-        setDiscoverIndex={setDiscoverIndex}
-        swipeHistory={swipeHistory}
-        setSwipeHistory={setSwipeHistory}
-        selectedDiscoverFolder={selectedDiscoverFolder}
-        setSelectedDiscoverFolder={setSelectedDiscoverFolder}
-        folders={folders}
-        getVisibleFolders={getVisibleFolders}
-        swipeDirection={swipeDirection}
-        bookFolders={bookFolders}
-        getBookKey={getBookKey}
-        handleRewind={handleRewind}
-        handleDiscoverDelete={handleDiscoverDelete}
-        handleSwipe={handleSwipe}
-        styles={styles}
-      />
-    );
-    const discoverBooks = savedFiles.map(f => f.payload?.catalogBook).filter(Boolean);
-    const currentBook = discoverBooks[discoverIndex];
-    const visibleFolders = getVisibleFolders(folders);
-
-    return (
-      <section style={{...styles.pagePanel, display: "flex", flexDirection: "column", height: "100%"}}>
-        <div style={styles.authHeader}>
-          <h2 style={styles.authTitle}>Organize Library</h2>
-          <p style={styles.authSubtitle}>Swipe right to add to '{selectedDiscoverFolder}'</p>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "center", padding: "0 16px" }}>
-          <select
-            value={selectedDiscoverFolder}
-            onChange={(e) => setSelectedDiscoverFolder(e.target.value)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: "8px",
-              border: "1px solid var(--border)",
-              background: "var(--card-bg)",
-              color: "var(--text)",
-              fontSize: "14px",
-              fontWeight: "600",
-              outline: "none",
-              cursor: "pointer",
-            }}
-          >
-            {visibleFolders.map(folder => (
-              <option key={folder} value={folder}>{folder}</option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", padding: "16px" }}>
-          {!currentBook ? (
-            <div style={{ textAlign: "center", color: "var(--text-l)" }}>
-              <p>You've organized all your saved books!</p>
-              <button style={{...styles.authPrimaryButton, marginTop: "16px"}} onClick={() => { setDiscoverIndex(0); setSwipeHistory([]); }}>Restart</button>
-            </div>
-          ) : (
-            <div
-              style={{
-                width: "100%",
-                maxWidth: "340px",
-                aspectRatio: "3/4",
-                background: "var(--card-bg)",
-                borderRadius: "16px",
-                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-                position: "relative",
-                transition: "transform 0.3s ease, opacity 0.3s ease",
-                transform: swipeDirection === "left" ? "translateX(-150%) rotate(-15deg)" : swipeDirection === "right" ? "translateX(150%) rotate(15deg)" : "translateX(0) rotate(0)",
-                opacity: swipeDirection ? 0 : 1,
-              }}
-            >
-              <div style={{ flex: 1, position: "relative" }}>
-                <img 
-                  src={currentBook?.imageLinks?.thumbnail || currentBook?.coverUrl || ""} 
-                  style={{ width: "100%", height: "100%", objectFit: "cover", backgroundColor: "var(--bg)" }} 
-                  alt={currentBook.title} 
-                  onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} 
-                />
-                <div style={{ display: (currentBook?.imageLinks?.thumbnail || currentBook?.coverUrl) ? 'none' : 'flex', width: "100%", height: "100%", backgroundColor: "var(--border)", alignItems: "center", justifyContent: "center", fontSize: "64px" }}>
-                  📚
-                </div>
-                <div style={{ position: "absolute", top: 16, right: 16, display: "flex", gap: "8px", flexDirection: "column" }}>
-                  {(currentBook.emojiTags || []).map((tag, i) => (
-                     <span key={i} style={{ background: "rgba(255,255,255,0.9)", padding: "8px", borderRadius: "50%", fontSize: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}>
-                       {tag}
-                     </span>
-                  ))}
-                </div>
-                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "24px 16px 16px", background: "linear-gradient(to top, rgba(0,0,0,0.9), transparent)", color: "#fff" }}>
-                  <h3 style={{ fontSize: "24px", fontWeight: "bold", margin: "0 0 4px", textShadow: "0 2px 4px rgba(0,0,0,0.5)" }}>{currentBook.title}</h3>
-                  <p style={{ margin: "0 0 8px", opacity: 0.9 }}>{currentBook.author}</p>
-                  <p style={{ margin: 0, fontSize: "14px", fontStyle: "italic", opacity: 0.8 }}>{currentBook.hook || (currentBook.description ? currentBook.description.substring(0, 100) + "..." : "")}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {currentBook && (
-          <div style={{ display: "flex", justifyContent: "center", gap: "24px", padding: "16px", paddingBottom: "32px", alignItems: "center" }}>
-            <button
-              style={{ width: "48px", height: "48px", borderRadius: "50%", background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", color: "var(--text)", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", cursor: swipeHistory.length > 0 ? "pointer" : "default", opacity: swipeHistory.length > 0 ? 1 : 0.5 }}
-              onClick={handleRewind}
-              disabled={swipeHistory.length === 0}
-            >
-              ⏪
-            </button>
-            <button
-              style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px", color: "#ef4444", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", cursor: "pointer" }}
-              onClick={() => handleDiscoverDelete(currentBook)}
-              aria-label="Delete saved book"
-            >
-              ❌
-            </button>
-            <button
-              style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px", color: "#22c55e", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", cursor: "pointer" }}
-              onClick={() => handleSwipe("right", currentBook)}
-            >
-              💚
-            </button>
-          </div>
-        )}
-      </section>
-    );
+    return null;
   }
 
   async function handleThemeSelect(themeId) {
@@ -6029,7 +5839,6 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
       {currentPage === "account" && renderAccountPage()}
       {currentPage === "saved" && renderSavedBooksPage()}
       {currentPage === "vibe" && renderVibePage()}
-      {currentPage === "discover" && renderDiscoverPage()}
       {currentPage === "dna" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px", width: "100%" }}>
           <div style={{ display: "flex", justifyContent: "center", gap: "10px", padding: "0 16px 8px", borderBottom: "1px solid var(--border)", margin: "0 auto 10px", width: "fit-content" }}>
@@ -6514,72 +6323,12 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
       )}
 
       {compareOpen && compare.length > 0 && (
-        <div style={styles.modal} onClick={() => setCompareOpen(false)}>
-          <div style={styles.compareModalContent} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.previewHeader}>
-              <div>
-                <h2 style={styles.modalTitle}>Compare Books</h2>
-                <p style={styles.previewSubtitle}>
-                  {compare.length < 2
-                    ? "Pick one more book to unlock side-by-side comparison."
-                    : "Ratings, levels, age, and summaries side by side."}
-                </p>
-              </div>
-
-              <button
-                style={styles.closeIconButton}
-                onClick={() => setCompareOpen(false)}
-                aria-label="Close compare"
-              >
-                X
-              </button>
-            </div>
-
-            <div style={styles.compareTableScroll}>
-              <div style={styles.compareTable}>
-                <div className="compare-row" style={styles.compareRow}>
-                  <div style={styles.compareLabel}>Book</div>
-                  {compare.map((book) => (
-                    <div
-                      key={`${book.title}-compare-title`}
-                      style={styles.compareValueStrong}
-                    >
-                      {book.title}
-                    </div>
-                  ))}
-                </div>
-                {renderCompareRow("Author", "author")}
-                {renderCompareRow("Rating", "rating")}
-                {renderCompareRow("Genre", "genre")}
-                {renderCompareRow("Level", "readingLevel")}
-                {renderCompareRow("Grade", "gradeBand")}
-                {renderCompareRow("Age", "ageRecommendation")}
-                {renderCompareRow("Why read", "whyRead")}
-                {renderCompareRow("Summary", "summary")}
-              </div>
-            </div>
-
-            <div style={styles.previewActionRow}>
-              <button
-                style={styles.secondaryButton}
-                onClick={() => {
-                  setCompare([]);
-                  setCompareOpen(false);
-                }}
-              >
-                Clear Compare
-              </button>
-              <button
-                style={{ ...styles.closeButton, marginTop: 0 }}
-                onClick={() => {
-                  setCompareOpen(false);
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <CompareBooksModal
+          compare={compare}
+          setCompare={setCompare}
+          setCompareOpen={setCompareOpen}
+          styles={styles}
+        />
       )}
 
       {libraryCardLoginPromptOpen && (
@@ -7343,7 +7092,6 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
 	        {[
 	          ["scan", "⌕", "Scan", "var(--accent)", "var(--accent-bg)"],
 	          ["vibe", "✦", "Vibe", "var(--accent)", "var(--accent-bg)"],
-	          ["discover", "✨", "Discover", "var(--accent)", "var(--accent-bg)"],
 	          ["dna", "🧬", "DNA", "var(--accent)", "var(--accent-bg)"],
 	          ["saved", "▤", "Stash", "var(--accent)", "var(--accent-bg)"],
 	        ].map(([pageId, icon, label, accent, accentBg]) => {

@@ -9,7 +9,6 @@ describe("useAppUI hook", () => {
     expect(result.current.folderModal.isOpen).toBe(false);
     expect(result.current.manualBookModalOpen).toBe(false);
     expect(result.current.openSections).toEqual(SECTION_DEFAULT_OPEN);
-    expect(result.current.discoverIndex).toBe(0);
   });
 
   it("should toggle sections correctly", () => {
