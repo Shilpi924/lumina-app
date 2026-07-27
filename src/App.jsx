@@ -67,6 +67,7 @@ import BookDetailSummaryGrid from "./components/BookDetailSummaryGrid";
 import CompareTray from "./components/CompareTray";
 import ScanLandingSection from "./components/ScanLandingSection";
 import ScanResultsSection from "./components/ScanResultsSection";
+import HomeDashboard from "./components/HomeDashboard";
 import { Purchases, LOG_LEVEL } from "@revenuecat/purchases-capacitor";
 import localforage from "localforage";
 import { BarcodeFormat, BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
@@ -1409,7 +1410,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState("");
-  const [currentPage, setCurrentPage] = useState("scan");
+  const [currentPage, setCurrentPage] = useState("home");
   const {
     user,
     setUser,
@@ -1535,7 +1536,23 @@ export default function App() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("");
-  const [isOffline, setIsOffline] = useState(() => typeof navigator !== "undefined" ? !navigator.onLine : false);
+  const [isOffline, setIsOffline] = useState(() => {
+    const initialOffline = typeof navigator !== "undefined" ? !navigator.onLine : false;
+    console.log("Initial offline status:", initialOffline, "navigator.onLine:", typeof navigator !== "undefined" ? navigator.onLine : "N/A");
+    // If navigator says offline, do a quick connectivity check to verify
+    if (initialOffline && typeof navigator !== "undefined") {
+      console.log("Navigator reports offline, doing connectivity check...");
+      fetch('https://www.google.com/favicon.ico', { mode: 'no-cors', cache: 'no-store' })
+        .then(() => {
+          console.log("Connectivity check succeeded - forcing online status");
+          setIsOffline(false);
+        })
+        .catch(() => {
+          console.log("Connectivity check failed - keeping offline status");
+        });
+    }
+    return initialOffline;
+  });
   const recognitionRef = useRef(null);
   const filterSearchRef = useRef(null);
   const libraryCardScanInputRef = useRef(null);
@@ -1686,11 +1703,14 @@ export default function App() {
 
   useEffect(() => {
     function handleOnline() {
+      console.log("Browser went online");
       setIsOffline(false);
     }
     function handleOffline() {
+      console.log("Browser went offline");
       setIsOffline(true);
     }
+    console.log("Setting up online/offline listeners. Current navigator.onLine:", navigator.onLine);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     return () => {
@@ -1962,8 +1982,6 @@ export default function App() {
 
         if (cloudState) {
           const localState = localUserStateRef.current;
-          const cloudFilters = normalizeFilters(cloudState.filters);
-          const localFilters = normalizeFilters(localState.filters);
           const mergedReadingList = mergeUniqueByKey(
             localState.readingList,
             Array.isArray(cloudState.readingList) ? cloudState.readingList : [],
@@ -2001,7 +2019,7 @@ export default function App() {
 
           setReadingList(mergedReadingList);
           setSavedFiles(mergedSavedFiles);
-          setFilters(hasActiveFilters(localFilters) ? localFilters : cloudFilters);
+          setFilters(DEFAULT_FILTERS);
           setScanHistory(mergedScanHistory);
           setFolders(mergedFolders.length ? mergedFolders : DEFAULT_FOLDERS);
           setBookFolders(mergedBookFolders);
@@ -2048,7 +2066,6 @@ export default function App() {
       saveUserAppState(user.uid, {
         readingList,
         savedFiles,
-        filters,
         books,
         geminiUsage,
         scanHistory,
@@ -2066,7 +2083,7 @@ export default function App() {
     }, 500);
 
     return () => window.clearTimeout(saveTimer);
-  }, [user, readingList, savedFiles, filters, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards, readingDna, reviews, readingJourney, scenes]);
+  }, [user, readingList, savedFiles, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards, readingDna, reviews, readingJourney, scenes]);
 
   useEffect(() => {
     previewCacheRef.current = previewCache;
@@ -2440,7 +2457,7 @@ Do not include explanations.
     const verificationPromises = scannedBooks.slice(0, 10).map(async (book) => {
       try {
         const query = `intitle:${book.title} ${book.author && book.author !== "Unknown" ? `inauthor:${book.author}` : ""}`;
-        const response = await searchGoogleBooks({ q: query, limit: 3 });
+        const response = await searchGoogleBooks({ query: query, limit: 3 });
         const items = response.data?.items || [];
         if (items.length > 0) {
           let bestMatch = null;
@@ -2526,6 +2543,7 @@ Do not include explanations.
     setBooks([]);
     setPreviewCache({});
     setSearch("");
+    setFilters({ ...DEFAULT_FILTERS });
     setVoiceStatus("");
     setVoiceListening(false);
     recognitionRef.current?.abort();
@@ -3119,14 +3137,12 @@ Important:
     try {
       const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
       const response = await searchGoogleBooks({
-        params: {
-          q: getGoogleBooksSimilarQuery(book),
-          maxResults: "30",
-          printType: "books",
-          orderBy: "relevance",
-          fields:
-            "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories,averageRating))",
-        }
+        query: getGoogleBooksSimilarQuery(book),
+        maxResults: "30",
+        printType: "books",
+        orderBy: "relevance",
+        fields:
+          "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories,averageRating))",
       });
 
       const data = response.data;
@@ -3188,13 +3204,11 @@ Important:
       const baseBook = validBooks[Math.floor(Math.random() * validBooks.length)];
       const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
       const response = await searchGoogleBooks({
-        params: {
-          q: getGoogleBooksSimilarQuery(baseBook),
-          maxResults: "40",
-          printType: "books",
-          orderBy: "relevance",
-          fields: "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories,averageRating))",
-        }
+        query: getGoogleBooksSimilarQuery(baseBook),
+        maxResults: "40",
+        printType: "books",
+        orderBy: "relevance",
+        fields: "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories,averageRating))",
       });
       
       const data = response.data;
@@ -3264,13 +3278,11 @@ Important:
     try {
       const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
       const response = await searchGoogleBooks({
-        params: {
-          q: query,
-          maxResults: "20",
-          printType: "books",
-          fields:
-            "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories),accessInfo(embeddable,viewability,webReaderLink))",
-        }
+        query: query,
+        maxResults: "20",
+        printType: "books",
+        fields:
+          "items(id,volumeInfo(title,subtitle,authors,publisher,publishedDate,description,categories),accessInfo(embeddable,viewability,webReaderLink))",
       });
 
       const data = response.data;
@@ -5836,6 +5848,19 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
         styles={styles}
       />
 
+      {currentPage === "home" && (
+        <HomeDashboard
+          readingList={readingList}
+          readingDna={readingDna}
+          scanHistory={scanHistory}
+          user={user}
+          onNavigateToScan={() => setCurrentPage("scan")}
+          onNavigateToVibe={() => setCurrentPage("vibe")}
+          onNavigateToDna={() => setCurrentPage("dna")}
+          onNavigateToSaved={() => setCurrentPage("saved")}
+          styles={styles}
+        />
+      )}
       {currentPage === "account" && renderAccountPage()}
       {currentPage === "saved" && renderSavedBooksPage()}
       {currentPage === "vibe" && renderVibePage()}
@@ -7090,6 +7115,7 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
       <nav style={styles.bottomTabs} aria-label="App pages">
         <div style={styles.bottomTabsInner}>
 	        {[
+	          ["home", "🏠", "Home", "var(--accent)", "var(--accent-bg)"],
 	          ["scan", "⌕", "Scan", "var(--accent)", "var(--accent-bg)"],
 	          ["vibe", "✦", "Vibe", "var(--accent)", "var(--accent-bg)"],
 	          ["dna", "🧬", "DNA", "var(--accent)", "var(--accent-bg)"],

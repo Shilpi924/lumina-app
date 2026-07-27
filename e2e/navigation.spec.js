@@ -17,7 +17,7 @@ test.describe('App Navigation and UI', () => {
     await expect(page.getByText('Lumina is initializing...')).toBeHidden({ timeout: 10000 });
 
     // Click the Vibe tab
-    await page.getByRole('button', { name: 'Vibe' }).click();
+    await page.locator('nav').getByRole('button', { name: 'Vibe' }).click();
 
     // Verify Discover feed loads (for anonymous users it shows a sign in prompt)
     await expect(page.getByRole('button', { name: 'Sign in to see your vibe' })).toBeVisible();
@@ -28,7 +28,7 @@ test.describe('App Navigation and UI', () => {
     await expect(page.getByText('Lumina is initializing...')).toBeHidden({ timeout: 10000 });
 
     // Click the Stash tab
-    await page.getByRole('button', { name: 'Stash' }).click();
+    await page.locator('nav').getByRole('button', { name: 'Stash' }).click();
 
     // Verify Library loads
     await expect(page.getByRole('heading', { name: 'My Haul 📚' })).toBeVisible();

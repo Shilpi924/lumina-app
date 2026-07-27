@@ -5,7 +5,7 @@ test.describe('Authentication Flow', () => {
     // Navigating to the Vibe tab which requires login for anonymous users
     await page.goto('/');
     await expect(page.getByText('Lumina is initializing...')).toBeHidden({ timeout: 10000 });
-    await page.getByRole('button', { name: 'Vibe' }).click();
+    await page.locator('nav').getByRole('button', { name: 'Vibe' }).click();
   });
 
   test('should render the login form correctly', async ({ page }) => {

@@ -8,7 +8,7 @@ test.describe('Library & Settings', () => {
 
   test('should show empty states for an anonymous user', async ({ page }) => {
     // Navigate to Stash
-    await page.getByRole('button', { name: 'Stash' }).click();
+    await page.locator('nav').getByRole('button', { name: 'Stash' }).click();
     await expect(page.getByRole('heading', { name: 'My Haul 📚' })).toBeVisible();
 
     // Check for empty reading list / library state text
