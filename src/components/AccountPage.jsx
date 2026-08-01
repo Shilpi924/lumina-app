@@ -1,4 +1,3 @@
-import React, { useRef } from "react";
 import localforage from "localforage";
 import { doc, setDoc } from "firebase/firestore";
 
@@ -15,7 +14,6 @@ export default function AccountPage({
   auth,
   styles,
   handleGoogleLogin,
-  handleAppleLogin,
   handleAuthSubmit,
   handleForgotPassword,
   handleSignOut,
@@ -40,9 +38,7 @@ export default function AccountPage({
   updateAuthForm,
   MAX_DISPLAY_NAME_LENGTH,
   GoogleIcon,
-  AppleIcon,
   renderThemeSelector,
-  renderLoginPage,
   renderLibraryCards,
   canOpenDeveloper,
   renderDeveloperPage,
@@ -469,7 +465,25 @@ export default function AccountPage({
       {renderLibraryCards()}
       {canOpenDeveloper && renderDeveloperPage()}
       <div style={{ marginTop: '32px', textAlign: 'center', color: 'var(--text-l)', fontSize: '12px', paddingBottom: '24px' }}>
-        &copy; 2026 Shilpi Sharma. All rights reserved.
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '16px' }}>
+          <a
+            href="https://luminapro.web.app/privacy-policy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--text-l)', textDecoration: 'underline' }}
+          >
+            Privacy Policy
+          </a>
+          <a
+            href="https://luminapro.web.app/terms-of-service.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--text-l)', textDecoration: 'underline' }}
+          >
+            Terms of Service
+          </a>
+        </div>
+        <div style={{ marginTop: '8px' }}>&copy; 2026 Shilpi Sharma. All rights reserved.</div>
       </div>
     </>
   );
