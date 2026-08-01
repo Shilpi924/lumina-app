@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { getTodayKey, getTimeGreeting } from "../utils/stringUtils";
 
 export default function HomeDashboard({
@@ -10,34 +10,25 @@ export default function HomeDashboard({
   onNavigateToVibe,
   onNavigateToDna,
   onNavigateToSaved,
-  styles,
 }) {
-  const [greeting, setGreeting] = useState("");
-  const [streak, setStreak] = useState(0);
-  const [totalBooks, setTotalBooks] = useState(0);
-  const [totalScans, setTotalScans] = useState(0);
-
-  useEffect(() => {
+  const greeting = useMemo(() => {
     const name = user?.displayName || "Reader";
-    const timeGreeting = getTimeGreeting(new Date());
-    setGreeting(`${timeGreeting}, ${name}`);
+    return `${getTimeGreeting(new Date())}, ${name}`;
   }, [user]);
 
-  useEffect(() => {
-    // Calculate reading streak
-    const today = getTodayKey();
+  const streak = useMemo(() => {
     const sortedHistory = Array.isArray(scanHistory) ? [...scanHistory].sort(
       (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
     ) : [];
-    
+
     let currentStreak = 0;
     let checkDate = new Date();
-    
+
     for (const scan of sortedHistory) {
       if (!scan?.createdAt) continue;
       const scanDate = new Date(scan.createdAt).toISOString().split("T")[0];
       const checkDateStr = checkDate.toISOString().split("T")[0];
-      
+
       if (scanDate === checkDateStr) {
         currentStreak++;
         checkDate.setDate(checkDate.getDate() - 1);
@@ -48,11 +39,12 @@ export default function HomeDashboard({
         break;
       }
     }
-    
-    setStreak(currentStreak);
-    setTotalBooks(Array.isArray(readingList) ? readingList.length : 0);
-    setTotalScans(Array.isArray(scanHistory) ? scanHistory.length : 0);
-  }, [scanHistory, readingList]);
+
+    return currentStreak;
+  }, [scanHistory]);
+
+  const totalBooks = Array.isArray(readingList) ? readingList.length : 0;
+  const totalScans = Array.isArray(scanHistory) ? scanHistory.length : 0;
 
   const dailyInsight = useMemo(() => {
     const insights = [
@@ -61,7 +53,7 @@ export default function HomeDashboard({
       { icon: "🌟", title: "Consistency wins", text: streak > 0 ? `${streak} day streak! Small daily actions compound into wisdom.` : "Start your streak today!" },
       { icon: "🔮", title: "Knowledge awaits", text: "Every book you scan adds to your personal knowledge graph." },
     ];
-    return insights[Math.floor(Math.random() * insights.length)];
+    return insights[getTodayKey().split("-").reduce((sum, part) => sum + Number(part), 0) % insights.length];
   }, [totalScans, readingDna, streak]);
 
   const quickActions = [

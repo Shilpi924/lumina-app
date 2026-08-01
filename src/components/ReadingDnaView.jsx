@@ -2,7 +2,7 @@ import { useState } from "react";
 import { generateClaudeContent } from "../services/claudeService";
 import { safeParseJson } from "../utils/stringUtils";
 
-export default function ReadingDnaView({ readingList, readingDna, onUpdateDna, user }) {
+export default function ReadingDnaView({ readingList, readingDna, onUpdateDna }) {
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("");
   const [error, setError] = useState("");

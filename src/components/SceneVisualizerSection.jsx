@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { generateClaudeContent } from "../services/claudeService";
 import { isAndroidApp, hasNativeSpeech, NativeSpeech } from "../utils/nativeSpeech";
 
-export default function SceneVisualizerSection({ selectedBook, scenes = {}, onSaveScene, user }) {
+export default function SceneVisualizerSection({ selectedBook, scenes = {}, onSaveScene }) {
   const [description, setDescription] = useState("");
   const [listening, setListening] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -174,7 +174,7 @@ Return ONLY the expanded visual prompt string. Do not include introductory text,
 
       // Save scene to collection
       const newScene = {
-        id: `scene-${Date.now()}`,
+        id: `scene-${crypto.randomUUID()}`,
         description: description.trim(),
         expandedPrompt,
         imageUrl,

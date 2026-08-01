@@ -1,4 +1,28 @@
-import React from "react";
+import { Share } from "@capacitor/share";
+
+async function shareVibeResult(vibeAiResult) {
+  const bookList = (vibeAiResult.suggestions || [])
+    .slice(0, 3)
+    .map((book) => `• ${book.title} by ${book.author}`)
+    .join("\n");
+
+  const text = [
+    `I'm "${vibeAiResult.personalityTitle}" 📚✨`,
+    vibeAiResult.personalityEssay?.split("\n\n")[0],
+    bookList && `\nMy Lumina picks:\n${bookList}`,
+    "\nDiscover your reading personality with Lumina.",
+  ].filter(Boolean).join("\n");
+
+  try {
+    await Share.share({
+      title: vibeAiResult.personalityTitle,
+      text,
+      dialogTitle: "Share your reading vibe",
+    });
+  } catch {
+    // User cancelled the share sheet, or share isn't supported — nothing to do.
+  }
+}
 
 export default function VibePage({
   user,
@@ -187,6 +211,29 @@ export default function VibePage({
                   </div>
                 </div>
               )}
+              <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(37, 99, 235, 0.12)" }}>
+                <button
+                  type="button"
+                  onClick={() => shareVibeResult(vibeAiResult)}
+                  style={{
+                    width: "100%",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    padding: "12px",
+                    borderRadius: "10px",
+                    border: "1px solid rgba(255,255,255,0.16)",
+                    background: "rgba(255,255,255,0.08)",
+                    color: "#ffffff",
+                    fontSize: "14px",
+                    fontWeight: "700",
+                    cursor: "pointer",
+                  }}
+                >
+                  ↗ Share your vibe
+                </button>
+              </div>
             </div>
 
             {/* Book suggestions */}

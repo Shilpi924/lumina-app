@@ -3,7 +3,7 @@ import { generateClaudeContent } from "../services/claudeService";
 import { safeParseJson } from "../utils/stringUtils";
 import { isAndroidApp, hasNativeSpeech, NativeSpeech } from "../utils/nativeSpeech";
 
-export default function VoiceReviewSection({ selectedBook, reviews = {}, onSaveReview, user }) {
+export default function VoiceReviewSection({ selectedBook, reviews = {}, onSaveReview }) {
   const [transcription, setTranscription] = useState("");
   const [listening, setListening] = useState(false);
   const [loading, setLoading] = useState(false);
