@@ -85,17 +85,29 @@ Lumina is a modern, AI-powered mobile web application designed to help readers o
 ### Home Page
 ![Home Page](./play-store-assets/screenshot-1-scan-home.png)
 
-### AI Chat
-![AI Chat](./play-store-assets/screenshot-3-book-details.png)
-
 ### Book Search Results
 ![Book Search Results](./play-store-assets/screenshot-2-scan-results.png)
 
-### Mobile View
-![Mobile View](./play-store-assets/screenshot-4-saved-books.png)
+### Book Details & AI Chat
+![Book Details](./play-store-assets/screenshot-3-book-details.png)
 
-### Login Page
+### Saved Books
+![Saved Books](./play-store-assets/screenshot-4-saved-books.png)
+
+### Compare Books
+![Compare Books](./play-store-assets/screenshot-5-compare-books.png)
+
+### Account / Login Page
 ![Login Page](./play-store-assets/screenshot-6-account.png)
+
+### AI Recommendations
+![AI Recommendations](./public/screenshots/ai_recommendations.png)
+
+### Barcode Scanner
+![Barcode Scanner](./public/screenshots/barcode_scanner.png)
+
+### Library View
+![Library View](./public/screenshots/library_view.png)
 
 ## 4. Tech Stack
 ### Frontend & Build
