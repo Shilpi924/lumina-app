@@ -1437,6 +1437,7 @@ export default function App() {
 
   const [selectedBook, setSelectedBook] = useState(null);
   const [similarBooksView, setSimilarBooksView] = useState(null);
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
 
 
@@ -1577,6 +1578,10 @@ export default function App() {
         setPreviewModal(null);
       } else if (folderModal.isOpen) {
         setFolderModal({ isOpen: false, name: "", book: null });
+      } else if (tagModal.isOpen) {
+        setTagModal({ isOpen: false, bookKey: "" });
+      } else if (avatarModalOpen) {
+        setAvatarModalOpen(false);
       } else if (manualBookModalOpen) {
         setManualBookModalOpen(false);
       } else if (scanLimitPromptOpen) {
@@ -1600,6 +1605,8 @@ export default function App() {
     similarBooksView,
     previewModal,
     folderModal.isOpen,
+    tagModal.isOpen,
+    avatarModalOpen,
     manualBookModalOpen,
     scanLimitPromptOpen
   ]);
@@ -2646,6 +2653,7 @@ Important:
         books: scannedBooks,
       };
       setBooks(scannedBooks);
+      showToast(`Scan complete! 🎉 Successfully identified ${scannedBooks.length} book${scannedBooks.length !== 1 ? 's' : ''}!`, "success");
       if (isSyncUser(user)) {
         setScanHistory((currentHistory) => [scanEntry, ...currentHistory].slice(0, 30));
         await saveUserScan(user.uid, {
@@ -4358,23 +4366,24 @@ Important:
   }
 
   function renderScanHistory(sectionKey) {
-    const recentScans = (scanHistory || []).slice(0, 5);
+    const sortedHistory = (scanHistory || []);
+    const displayedScans = showAllHistory ? sortedHistory : sortedHistory.slice(0, 2);
 
     return renderCollapsibleSection({
       id: `${sectionKey}-scanHistory`,
       title: "Recent Scans",
-      meta: `${recentScans.length}`,
+      meta: `${sortedHistory.length}`,
       defaultOpen: false,
       style: styles.savedFilesSection,
       children: (
         <>
-          {recentScans.length === 0 ? (
+          {sortedHistory.length === 0 ? (
             <p style={styles.countText}>
               No scan history yet. Scan a bookshelf to get started!
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "4px 0" }}>
-              {recentScans.map((scan, idx) => {
+              {displayedScans.map((scan, idx) => {
                 const scanDate = scan.createdAt
                   ? new Date(scan.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
                   : "Unknown date";
@@ -4432,6 +4441,25 @@ Important:
                   </div>
                 );
               })}
+              {sortedHistory.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllHistory(prev => !prev)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    alignSelf: "center",
+                    marginTop: "4px",
+                    textDecoration: "underline",
+                  }}
+                >
+                  {showAllHistory ? "Show less history" : `Show all history (${sortedHistory.length})`}
+                </button>
+              )}
             </div>
           )}
         </>

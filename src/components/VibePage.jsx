@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Share } from "@capacitor/share";
 
 async function shareVibeResult(vibeAiResult) {
@@ -44,6 +45,8 @@ export default function VibePage({
   setCurrentPage,
   styles,
 }) {
+  const [showVibeTip, setShowVibeTip] = useState(true);
+
   if (!user) {
     return (
       <section style={styles.vibePage}>
@@ -85,6 +88,43 @@ export default function VibePage({
           </p>
         </div>
       </div>
+
+      {showVibeTip && (
+        <div style={{
+          background: "linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%)",
+          border: "1px solid rgba(139, 92, 246, 0.15)",
+          borderRadius: "12px",
+          padding: "14px 16px",
+          margin: "0 16px 20px",
+          position: "relative",
+          display: "flex",
+          gap: "12px",
+          alignItems: "flex-start",
+        }}>
+          <span style={{ fontSize: "20px" }}>💡</span>
+          <div style={{ flex: 1 }}>
+            <h4 style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: "700", color: "var(--text)" }}>Tip: Discover your reading personality</h4>
+            <p style={{ margin: 0, fontSize: "12.5px", color: "var(--text-l)", lineHeight: 1.4 }}>
+              Tap <strong>"Read my saved books"</strong> to let AI analyze your shelf, or choose a mood filter below to find new personalized recommendations!
+            </p>
+          </div>
+          <button
+            type="button"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "16px",
+              color: "var(--text-l)",
+              padding: "0 4px",
+              lineHeight: 1,
+            }}
+            onClick={() => setShowVibeTip(false)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── AI Personality Reader ── */}
       <div style={styles.vibeSection}>
