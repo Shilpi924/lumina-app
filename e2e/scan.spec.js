@@ -10,6 +10,9 @@ test.describe('Scanner & Main Feed', () => {
     // Ensure we are on the scan tab
     await page.getByRole('button', { name: '⌕ Scan' }).click();
 
+    // Toggle options to make them visible
+    await page.getByRole('button', { name: 'Show barcode & manual options' }).click();
+
     // Toggle manual entry
     await page.getByRole('button', { name: '✍️ Add Book Manually' }).click();
 
@@ -20,6 +23,9 @@ test.describe('Scanner & Main Feed', () => {
 
   test('should open barcode scanner', async ({ page }) => {
     await page.getByRole('button', { name: '⌕ Scan' }).click();
+
+    // Toggle options to make them visible
+    await page.getByRole('button', { name: 'Show barcode & manual options' }).click();
 
     // We expect the native barcode scanner to be mocked or at least not crash
     // Since it relies on Capacitor, the web fallback or button should exist

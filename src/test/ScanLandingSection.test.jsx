@@ -55,6 +55,10 @@ describe("ScanLandingSection", () => {
     );
 
     expect(screen.getByText("Good evening")).toBeTruthy();
+    
+    // Toggle options to make them visible
+    fireEvent.click(screen.getByRole("button", { name: "Show barcode & manual options" }));
+
     expect(screen.getByRole("button", { name: "Scan Barcode" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add Book Manually" })).toBeTruthy();
     expect(screen.getByText("Filters")).toBeTruthy();
@@ -98,6 +102,9 @@ describe("ScanLandingSection", () => {
         userScanCount={0}
       />
     );
+
+    // Toggle options to make them visible
+    fireEvent.click(screen.getByRole("button", { name: "Show barcode & manual options" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Add Book Manually" }));
     expect(openManualBookModal).toHaveBeenCalled();

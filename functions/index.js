@@ -422,9 +422,6 @@ function createClaudeCallable() {
 
 export const generateClaudeContent = createClaudeCallable();
 
-// Compatibility endpoint for older app versions. It is intentionally Claude-only.
-export const generateGeminiContent = createClaudeCallable();
-
 export const searchGoogleBooks = onCall(
   {
     region: 'us-central1',

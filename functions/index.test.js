@@ -4,7 +4,7 @@ import test from 'node:test';
 
 process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
 
-const { generateClaudeContent, generateGeminiContent } = await import('./index.js');
+const { generateClaudeContent } = await import('./index.js');
 
 function successfulClaudeResponse() {
   return {
@@ -52,8 +52,4 @@ async function verifyClaudeOnly(callable) {
 
 test('new callable uses only Claude 4.5 Haiku', async () => {
   await verifyClaudeOnly(generateClaudeContent);
-});
-
-test('legacy callable is also Claude-only for older app versions', async () => {
-  await verifyClaudeOnly(generateGeminiContent);
 });

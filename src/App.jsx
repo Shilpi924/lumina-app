@@ -3625,41 +3625,57 @@ Important:
                   </button>
                 </>
               ) : (
-                options.prefix !== "library" && (
-                  <button
-                    type="button"
-                    disabled={books.length < 3}
-                    style={{
-                      ...styles.smallButton,
-                      ...(shelfLocationOpen ? styles.selectedButton : {}),
-                      ...(books.length < 3 ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOpenShelfLocations((locations) => ({
-                        ...locations,
-                        [bookKey]: !shelfLocationOpen,
-                      }));
-                    }}
-                  >
-                    {e("📍", "Locate on Shelf")}
-                  </button>
-                )
-              )}
+                <>
+                  {options.prefix !== "library" && books.length > 1 && (
+                    <button
+                      type="button"
+                      style={{
+                        ...styles.smallButton,
+                        ...(shelfLocationOpen ? styles.selectedButton : {}),
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenShelfLocations((locations) => ({
+                          ...locations,
+                          [bookKey]: !shelfLocationOpen,
+                        }));
+                      }}
+                    >
+                      {books.length >= 3 ? e("📍", "Locate on Shelf") : e("📍", "Locate")}
+                    </button>
+                  )}
 
-              <button
-                type="button"
-                style={{
-                  ...styles.smallButton,
-                  ...(compareSelected ? styles.selectedButton : {}),
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleCompare(book);
-                }}
-              >
-                {compareSelected ? "Remove from Compare" : e("⚖️", "Compare")}
-              </button>
+                  {options.prefix !== "library" && books.length === 1 && (
+                    <button
+                      type="button"
+                      style={styles.smallButton}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBook(book);
+                        setSimilarBooksView(null);
+                      }}
+                    >
+                      View Details
+                    </button>
+                  )}
+
+                  {options.prefix !== "library" && books.length > 1 && (
+                    <button
+                      type="button"
+                      style={{
+                        ...styles.smallButton,
+                        ...(compareSelected ? styles.selectedButton : {}),
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleCompare(book);
+                      }}
+                    >
+                      {compareSelected ? "Remove from Compare" : e("⚖️", "Compare with other books")}
+                    </button>
+                  )}
+                </>
+              )}
             </div>
 
             {options.prefix !== "library" && shelfLocationOpen && (

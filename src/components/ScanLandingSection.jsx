@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export default function ScanLandingSection({
   anonymousScanCount,
   authReady,
@@ -32,6 +34,8 @@ export default function ScanLandingSection({
   userScanCount,
   onToggleArMode,
 }) {
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
+
   return (
     <>
       <section
@@ -142,22 +146,6 @@ export default function ScanLandingSection({
             margin: 0,
             background: "var(--accent-bg)",
             color: "var(--accent)",
-          }}
-          onClick={handleBarcodeScan}
-          disabled={isOffline || loading}
-        >
-          {e("🏷️", "Scan Barcode")}
-        </button>
-
-        <button
-          type="button"
-          className="btn-press"
-          style={{
-            ...styles.uploadPhotoButton,
-            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-            margin: 0,
-            background: "var(--accent-bg)",
-            color: "var(--accent)",
             border: "1px solid var(--accent-border)",
           }}
           onClick={onToggleArMode}
@@ -165,21 +153,62 @@ export default function ScanLandingSection({
         >
           {e("✨", "AR Shelf Sync")}
         </button>
+      </div>
 
+      <div style={{ textAlign: "center", margin: "12px 0" }}>
         <button
           type="button"
-          className="btn-press"
           style={{
-            ...styles.manualBookButton,
-            ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-            margin: 0,
+            background: "none",
+            border: "none",
+            color: "var(--accent)",
+            cursor: "pointer",
+            fontSize: "14px",
+            textDecoration: "underline",
+            fontWeight: "600",
           }}
-          disabled={isOffline}
-          onClick={openManualBookModal}
+          onClick={() => setShowMoreOptions(prev => !prev)}
         >
-          {e("✍️", "Add Book Manually")}
+          {showMoreOptions ? "Hide other scan options" : "Show barcode & manual options"}
         </button>
       </div>
+
+      {showMoreOptions && (
+        <div
+          className="scan-buttons-enter"
+          style={{ ...styles.uploadBox, display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap", marginTop: "8px" }}
+        >
+          <button
+            type="button"
+            className="btn-press"
+            style={{
+              ...styles.uploadPhotoButton,
+              ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+              margin: 0,
+              background: "var(--accent-bg)",
+              color: "var(--accent)",
+            }}
+            onClick={handleBarcodeScan}
+            disabled={isOffline || loading}
+          >
+            {e("🏷️", "Scan Barcode")}
+          </button>
+
+          <button
+            type="button"
+            className="btn-press"
+            style={{
+              ...styles.manualBookButton,
+              ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+              margin: 0,
+            }}
+            disabled={isOffline}
+            onClick={openManualBookModal}
+          >
+            {e("✍️", "Add Book Manually")}
+          </button>
+        </div>
+      )}
 
       {renderFilterControls()}
 
