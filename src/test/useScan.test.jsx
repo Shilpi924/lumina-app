@@ -18,18 +18,18 @@ describe("useScan hook", () => {
   it("should check scan limit properly for anonymous user", () => {
     const { result } = renderHook(() => useScan({ db: {}, user: null }));
     
-    // Simulate they hit the limit of 3 today
+    // Simulate any scan count
     act(() => {
       result.current.setLastScanDate(new Date().toISOString().split("T")[0]);
-      result.current.setAnonymousScanCount(3);
+      result.current.setAnonymousScanCount(5);
     });
 
     let canScan;
     act(() => {
       canScan = result.current.checkScanLimit();
     });
-    expect(canScan).toBe(false);
-    expect(result.current.scanLimitModalState).toBe("login_required");
+    expect(canScan).toBe(true);
+    expect(result.current.scanLimitModalState).toBeNull();
   });
 
   it("should increment user scan count", async () => {

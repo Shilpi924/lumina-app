@@ -68,7 +68,6 @@ import CompareTray from "./components/CompareTray";
 import ScanLandingSection from "./components/ScanLandingSection";
 import ScanResultsSection from "./components/ScanResultsSection";
 import HomeDashboard from "./components/HomeDashboard";
-import { Purchases, LOG_LEVEL } from "@revenuecat/purchases-capacitor";
 import localforage from "localforage";
 import { BarcodeFormat, BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
 const IS_BETA_MODE = true;
@@ -1817,24 +1816,6 @@ export default function App() {
   useEffect(() => {
     writeStoredJson("libraryCards", libraryCards);
   }, [libraryCards]);
-
-  useEffect(() => {
-    const initRevenueCat = async () => {
-      if (isNativeApp && !IS_BETA_MODE) {
-        try {
-          await Purchases.setLogLevel({ level: LOG_LEVEL.DEBUG });
-          if (isAndroidApp) {
-            await Purchases.configure({ apiKey: "test_nhJMYDdQJKSDFIFhVBzrtniTUJi" });
-          } else {
-            await Purchases.configure({ apiKey: "test_nhJMYDdQJKSDFIFhVBzrtniTUJi" });
-          }
-        } catch (e) {
-          console.error("Error initializing RevenueCat", e);
-        }
-      }
-    };
-    initRevenueCat();
-  }, []);
 
   useEffect(() => {
     if (!authLoading) return undefined;
@@ -4524,22 +4505,6 @@ Important:
       showToast("Hey bestie! ✨ Log in to unlock Beta Plus for unlimited scans! 🌙", "info");
       setCurrentPage("account");
       return;
-    }
-
-    if (!IS_BETA_MODE && isNativeApp) {
-      try {
-        const offerings = await Purchases.getOfferings();
-        if (offerings.current !== null && offerings.current.availablePackages.length !== 0) {
-          const packageToBuy = offerings.current.availablePackages[0];
-          await Purchases.purchasePackage({ aPackage: packageToBuy });
-        }
-      } catch (e) {
-        console.error("Purchase failed", e);
-        if (!e.userCancelled) {
-          showToast("Purchase failed. Please try again.", "error");
-        }
-        return;
-      }
     }
 
     setSelectedPlusPlan(plan.id);

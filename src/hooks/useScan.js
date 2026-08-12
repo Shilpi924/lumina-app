@@ -8,32 +8,12 @@ export function useScan({ db, user }) {
   // Scan Limit Tracking
   const [scanLimitModalState, setScanLimitModalState] = useState(null); // null, "login_required", "plus_required"
   const [anonymousScanCount, setAnonymousScanCount] = useState(0);
-  const [isAnonymousPlus, setIsAnonymousPlus] = useState(false);
+  const [isAnonymousPlus, setIsAnonymousPlus] = useState(true);
   const [userScanCount, setUserScanCount] = useState(0);
-  const [isUserPlus, setIsUserPlus] = useState(false);
+  const [isUserPlus, setIsUserPlus] = useState(true);
   const [lastScanDate, setLastScanDate] = useState("");
 
   const checkScanLimit = () => {
-    // Only allow Plus for logged-in users
-    const activePlus = user ? isUserPlus : false;
-    if (activePlus) return true;
-
-    const today = new Date().toISOString().split("T")[0];
-    const isNewDay = lastScanDate !== today;
-
-    if (user) {
-      const currentCount = isNewDay ? 0 : userScanCount;
-      if (currentCount >= 10) {
-        setScanLimitModalState("plus_required");
-        return false;
-      }
-    } else {
-      const currentCount = isNewDay ? 0 : anonymousScanCount;
-      if (currentCount >= 3) {
-        setScanLimitModalState("login_required");
-        return false;
-      }
-    }
     return true;
   };
 
