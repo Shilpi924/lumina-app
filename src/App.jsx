@@ -637,10 +637,20 @@ function readStoredJson(key, fallbackValue) {
   }
 }
 
+function isQuotaExceededError(err) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return msg.includes("quota") || msg.includes("exceeded") || err?.code === 22 || err?.code === 1014;
+}
+
 function writeStoredJson(key, value) {
   try {
     localforage.setItem(key, value).catch(err => {
       console.error(`Could not write ${key} to localforage:`, err);
+      if (isQuotaExceededError(err)) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("lumina_storage_quota_exceeded"));
+        }
+      }
     });
   } catch (err) {
     console.error(`Could not write ${key}:`, err);
@@ -1419,6 +1429,21 @@ export default function App() {
       window.removeEventListener("lumina_ai_operation", handleAiOperation);
     };
   }, [logAiOperation]);
+
+  useEffect(() => {
+    const handleQuotaExceeded = () => {
+      showToast("Storage quota exceeded. Optimizing scan logs and history to free up space.", "error");
+      setAiLogs([]);
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem("lumina_ai_observability_logs");
+      }
+      setScanHistory((current) => current.slice(0, 3));
+    };
+    window.addEventListener("lumina_storage_quota_exceeded", handleQuotaExceeded);
+    return () => {
+      window.removeEventListener("lumina_storage_quota_exceeded", handleQuotaExceeded);
+    };
+  }, []);
 
   const [imagePreview, setImagePreview] = useState(null);
   const [shelfPhotoHistory, setShelfPhotoHistory] = useState([]);
@@ -2475,8 +2500,11 @@ function getCleanQueryString(str) {
 
     const searchGoogleBooks = httpsCallable(cloudFunctions, 'searchGoogleBooks');
     
-    const verificationPromises = scannedBooks.slice(0, 10).map(async (book) => {
+    const verificationPromises = scannedBooks.slice(0, 10).map(async (book, index) => {
       try {
+        if (index > 0) {
+          await new Promise((resolve) => setTimeout(resolve, index * 150));
+        }
         const cleanTitleQuery = getCleanQueryString(book.title);
         const cleanAuthorQuery = getCleanQueryString(book.author);
         const query = `intitle:${cleanTitleQuery}${cleanAuthorQuery && cleanAuthorQuery !== "Unknown" ? ` inauthor:${cleanAuthorQuery}` : ""}`;
