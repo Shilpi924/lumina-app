@@ -39,8 +39,8 @@ export function useAuth({ setCurrentPage }) {
   
   const userDataLoadedRef = useRef(false);
 
-  const isNativeApp = Capacitor.isNativePlatform();
-  const isAndroidApp = Capacitor.getPlatform() === "android";
+  const isNativeApp = Capacitor.isNativePlatform() || (typeof window !== "undefined" && !!window.isNativeAppMock);
+  const isAndroidApp = Capacitor.getPlatform() === "android" || (typeof window !== "undefined" && !!window.isAndroidAppMock);
   const hasNativeFirebaseAuthentication = Capacitor.isPluginAvailable("FirebaseAuthentication");
   const isAndroidGoogleSsoConfigured = import.meta.env.VITE_ANDROID_GOOGLE_SSO_READY === "true";
 

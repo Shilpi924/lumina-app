@@ -1,11 +1,40 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Chat interactions', () => {
-  test('chat opens and displays default message', async ({ page }) => {
-    await page.goto('/');
+  test.beforeEach(async ({ page }) => {
+    // Intercept Claude generation API for Chat call
+    await page.route(url => url.toString().includes('generateClaudeContent'), async (route) => {
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Firebase-GMPID, X-Firebase-AppCheck',
+          }
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+          },
+          body: JSON.stringify({
+            result: {
+              text: 'Lumina recommends: Dune is an amazing sci-fi choice for you!'
+            }
+          })
+        });
+      }
+    });
 
-    // Locate the chat FAB (Floating Action Button) by its aria-label or specific selector
-    // Based on ChatBox component, the button is "Chat with Lumina"
+    await page.goto('/');
+    await expect(page.getByText('Lumina is initializing...')).toBeHidden({ timeout: 10000 });
+  });
+
+  test('chat opens and displays response from Lumina', async ({ page }) => {
+    // Locate the chat FAB (Floating Action Button)
     const chatFab = page.locator('.chatbox-fab');
     await chatFab.waitFor({ state: 'visible' });
     await chatFab.click();
@@ -22,13 +51,15 @@ test.describe('Chat interactions', () => {
     const inputField = page.locator('.chatbox-input input');
     await inputField.fill('I want a sci-fi book');
     
-    // We mock the network response if needed or just assert the loading state works
-    // For now we check the message gets appended
     const sendButton = page.locator('.chatbox-send-button');
     await sendButton.click();
 
     // The user's message should appear
     const userMessage = page.locator('.chatbox-message.user').last();
     await expect(userMessage).toContainText('I want a sci-fi book');
+
+    // Verify chat response gets appended
+    const botResponse = page.locator('.chatbox-message.model').last();
+    await expect(botResponse).toContainText('Lumina recommends: Dune is an amazing sci-fi choice');
   });
 });
