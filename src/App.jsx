@@ -4902,12 +4902,6 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
           </strong>
         </div>
         <div style={styles.developerStatCard}>
-          <span style={styles.developerStatLabel}>Gemini Success</span>
-          <strong style={styles.developerStatValue}>
-            {developerStats.geminiSuccessCalls?.toLocaleString() || "0"}
-          </strong>
-        </div>
-        <div style={styles.developerStatCard}>
           <span style={styles.developerStatLabel}>Claude Success</span>
           <strong style={styles.developerStatValue}>
             {developerStats.claudeSuccessCalls?.toLocaleString() || "0"}
