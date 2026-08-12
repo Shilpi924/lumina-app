@@ -2614,8 +2614,10 @@ Important:
 
       const parsed = safeParseJson(text);
 
-      if (!parsed?.books || !Array.isArray(parsed.books)) {
-        throw new Error("No books returned from Claude");
+      if (!parsed?.books || !Array.isArray(parsed.books) || parsed.books.length === 0) {
+        setLoading(false);
+        showToast("Hey bestie! ✨ This app is only for books. Please upload a picture of a bookshelf or book covers!", "error");
+        return;
       }
 
       const rawScannedBooks = parsed.books.map(enrichScannedBook);

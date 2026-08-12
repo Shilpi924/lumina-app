@@ -151,9 +151,21 @@ export default function ScanLandingSection({
           onClick={onToggleArMode}
           disabled={isOffline || loading}
         >
-          {e("✨", "AR Shelf Sync")}
+          {e("✨", "Scan Whole Bookshelf")}
         </button>
       </div>
+
+      <p style={{
+        fontSize: "12px",
+        color: "var(--text-l)",
+        textAlign: "center",
+        marginTop: "12px",
+        marginBottom: "4px",
+        lineHeight: "1.4",
+        padding: "0 16px"
+      }}>
+        💡 <strong>Tip:</strong> Use <strong>Scan Whole Bookshelf</strong> to scan your physical bookshelf with your live camera and match your books instantly!
+      </p>
 
       <div style={{ textAlign: "center", margin: "12px 0" }}>
         <button
