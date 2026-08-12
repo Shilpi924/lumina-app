@@ -4493,6 +4493,9 @@ Important:
         renderLibraryCards={renderLibraryCards}
         canOpenDeveloper={canOpenDeveloper}
         renderDeveloperPage={renderDeveloperPage}
+        savedFiles={savedFiles}
+        folders={folders}
+        reviews={reviews}
       />
     );
   }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import localforage from "localforage";
 import { doc, setDoc } from "firebase/firestore";
 
@@ -42,9 +43,40 @@ export default function AccountPage({
   renderLibraryCards,
   canOpenDeveloper,
   renderDeveloperPage,
+  savedFiles = [],
+  folders = [],
+  reviews = {},
 }) {
   const isSignUp = authMode === "signup";
   const accountUser = isSyncUser(user) ? user : null;
+
+  const [achievementsOpen, setAchievementsOpen] = useState(true);
+  const [weeklyGoal, setWeeklyGoal] = useState(() => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      return window.localStorage.getItem("lumina_weekly_reading_goal") || "3";
+    }
+    return "3";
+  });
+  const [featuredBadge, setFeaturedBadge] = useState(() => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      return window.localStorage.getItem("lumina_featured_badge") || "first_scan";
+    }
+    return "first_scan";
+  });
+
+  const handleWeeklyGoalChange = (val) => {
+    setWeeklyGoal(val);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("lumina_weekly_reading_goal", val);
+    }
+  };
+
+  const handleFeaturedBadgeChange = (badgeId) => {
+    setFeaturedBadge(badgeId);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("lumina_featured_badge", badgeId);
+    }
+  };
 
   const handleProfilePictureUpload = (event) => {
     const file = event.target.files?.[0];
@@ -459,9 +491,294 @@ export default function AccountPage({
     );
   };
 
+  const renderAchievementsSection = () => {
+    if (!accountUser) return null;
+
+    const achievements = [
+      {
+        id: "first_scan",
+        emoji: "🚀",
+        title: "First Steps",
+        description: "Scan or add your first book",
+        unlocked: (savedFiles || []).length >= 1,
+        progress: `${Math.min((savedFiles || []).length, 1)}/1`,
+      },
+      {
+        id: "bookworm",
+        emoji: "📚",
+        title: "Bookworm",
+        description: "Have 5 or more books saved in your stash",
+        unlocked: (savedFiles || []).length >= 5,
+        progress: `${Math.min((savedFiles || []).length, 5)}/5`,
+      },
+      {
+        id: "super_organizer",
+        emoji: "🏷️",
+        title: "Super Organizer",
+        description: "Create at least 1 custom folder to group your books",
+        unlocked: (folders || []).length >= 1,
+        progress: `${Math.min((folders || []).length, 1)}/1`,
+      },
+      {
+        id: "reflection",
+        emoji: "🎤",
+        title: "Reflection",
+        description: "Record a review or review a book",
+        unlocked: Object.keys(reviews || {}).length >= 1,
+        progress: `${Math.min(Object.keys(reviews || {}).length, 1)}/1`,
+      },
+    ];
+
+    const unlockedCount = achievements.filter((a) => a.unlocked).length;
+
+    // Weekly Goal Progress Calculations
+    const weeklyGoalInt = parseInt(weeklyGoal, 10) || 3;
+    const weeklyProgress = Math.min((savedFiles || []).length, weeklyGoalInt);
+    const progressPercent = Math.round((weeklyProgress / weeklyGoalInt) * 100);
+
+    return (
+      <section
+        style={{
+          backgroundColor: "var(--card-bg)",
+          border: "1px solid var(--border)",
+          borderRadius: "16px",
+          padding: "16px",
+          marginTop: "16px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.02)",
+        }}
+      >
+        <div
+          onClick={() => setAchievementsOpen(!achievementsOpen)}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            cursor: "pointer",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "20px" }}>🏆</span>
+            <h3 style={{ fontSize: "16px", fontWeight: "700", color: "var(--text)", margin: 0 }}>
+              Reading Achievements
+            </h3>
+            <span
+              style={{
+                fontSize: "11px",
+                backgroundColor: "var(--accent-glow)",
+                color: "var(--accent)",
+                padding: "2px 8px",
+                borderRadius: "12px",
+                fontWeight: "600",
+              }}
+            >
+              {unlockedCount}/{achievements.length} Unlocked
+            </span>
+          </div>
+          <span
+            style={{
+              fontSize: "14px",
+              color: "var(--text-l)",
+              transform: achievementsOpen ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.2s",
+            }}
+          >
+            ▼
+          </span>
+        </div>
+
+        {achievementsOpen && (
+          <div style={{ marginTop: "16px" }}>
+            {/* Weekly Goal Selector & Progress Bar */}
+            <div
+              style={{
+                backgroundColor: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                padding: "14px",
+                marginBottom: "16px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "8px",
+                  flexWrap: "wrap",
+                  gap: "8px",
+                }}
+              >
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text)" }}>
+                  🎯 Weekly Reading Goal:
+                </span>
+                <select
+                  value={weeklyGoal}
+                  onChange={(e) => handleWeeklyGoalChange(e.target.value)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: "6px",
+                    border: "1px solid var(--border)",
+                    background: "var(--card-bg)",
+                    color: "var(--text)",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="1">1 Book / week</option>
+                  <option value="3">3 Books / week</option>
+                  <option value="5">5 Books / week</option>
+                  <option value="10">10 Books / week</option>
+                </select>
+              </div>
+
+              {/* Goal Progress Bar */}
+              <div
+                style={{
+                  width: "100%",
+                  height: "8px",
+                  backgroundColor: "var(--border)",
+                  borderRadius: "4px",
+                  overflow: "hidden",
+                  marginBottom: "4px",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${progressPercent}%`,
+                    height: "100%",
+                    backgroundColor: "var(--accent)",
+                    transition: "width 0.3s ease",
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "11px",
+                  color: "var(--text-l)",
+                }}
+              >
+                <span>{progressPercent}% Complete</span>
+                <span>
+                  {weeklyProgress}/{weeklyGoalInt} Books
+                </span>
+              </div>
+            </div>
+
+            {/* Badges Grid */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                gap: "12px",
+              }}
+            >
+              {achievements.map((achievement) => {
+                const isFeatured = featuredBadge === achievement.id;
+                return (
+                  <div
+                    key={achievement.id}
+                    onClick={() => {
+                      if (achievement.unlocked) {
+                        handleFeaturedBadgeChange(achievement.id);
+                      }
+                    }}
+                    style={{
+                      backgroundColor: "var(--bg)",
+                      border: isFeatured
+                        ? "1px solid var(--accent)"
+                        : "1px solid var(--border)",
+                      borderRadius: "12px",
+                      padding: "12px",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      textAlign: "center",
+                      position: "relative",
+                      cursor: achievement.unlocked ? "pointer" : "default",
+                      boxShadow: isFeatured ? "0 0 10px var(--accent-glow)" : "none",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    {isFeatured && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "4px",
+                          right: "4px",
+                          fontSize: "9px",
+                          backgroundColor: "var(--accent)",
+                          color: "#fff",
+                          padding: "1px 4px",
+                          borderRadius: "4px",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        Featured
+                      </span>
+                    )}
+                    <div
+                      style={{
+                        fontSize: "32px",
+                        marginBottom: "6px",
+                        filter: achievement.unlocked ? "none" : "grayscale(100%) opacity(40%)",
+                        transform: achievement.unlocked ? "scale(1.1)" : "scale(1)",
+                        transition: "transform 0.2s ease",
+                      }}
+                    >
+                      {achievement.emoji}
+                    </div>
+                    <h4
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        color: "var(--text)",
+                        margin: "0 0 4px 0",
+                      }}
+                    >
+                      {achievement.title}
+                    </h4>
+                    <p
+                      style={{
+                        fontSize: "10px",
+                        color: "var(--text-l)",
+                        margin: "0 0 8px 0",
+                        lineHeight: "1.3",
+                        flex: 1,
+                      }}
+                    >
+                      {achievement.description}
+                    </p>
+                    <div
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: "700",
+                        color: achievement.unlocked ? "var(--accent)" : "var(--text-l)",
+                        backgroundColor: achievement.unlocked
+                          ? "var(--accent-glow)"
+                          : "var(--border)",
+                        padding: "2px 8px",
+                        borderRadius: "8px",
+                      }}
+                    >
+                      {achievement.progress}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+    );
+  };
+
   return (
     <>
       {renderAuthSection()}
+      {renderAchievementsSection()}
       {renderLibraryCards()}
       {canOpenDeveloper && renderDeveloperPage()}
       <div style={{ marginTop: '32px', textAlign: 'center', color: 'var(--text-l)', fontSize: '12px', paddingBottom: '24px' }}>
