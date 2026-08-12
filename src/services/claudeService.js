@@ -19,9 +19,7 @@ export function getClaudeText(result) {
     result?.candidates?.[0]?.content?.parts?.[0]?.text ||
     ""
   );
-}
-
-export async function generateClaudeContent(
+}export async function generateClaudeContent(
   contents,
   generationConfig = {},
   callType = "Claude call",
@@ -31,12 +29,46 @@ export async function generateClaudeContent(
     throw new Error("Firebase Functions is not configured.");
   }
 
-  const callable = httpsCallable(cloudFunctions, "generateClaudeContent");
-  const response = await callable({ contents, generationConfig, callType, routing });
+  const startTime = Date.now();
+  let status = "success";
+  let promptTokens = 0;
+  let totalTokens = 0;
+  let modelName = "Claude 3.5 Sonnet";
+  let provider = "Anthropic";
 
-  return response.data;
+  try {
+    const callable = httpsCallable(cloudFunctions, "generateClaudeContent");
+    const response = await callable({ contents, generationConfig, callType, routing });
+    
+    promptTokens = getPromptTokenCount(response.data);
+    totalTokens = getTotalTokenCount(response.data);
+    if (response.data?.model) {
+      modelName = response.data.model;
+    }
+    if (response.data?.provider) {
+      provider = response.data.provider;
+    }
+    return response.data;
+  } catch (error) {
+    status = "error";
+    throw error;
+  } finally {
+    const latency = Date.now() - startTime;
+    if (typeof window !== "undefined") {
+      const logEntry = {
+        type: callType,
+        model: modelName,
+        provider: provider,
+        promptTokens,
+        totalTokens,
+        latency,
+        status,
+      };
+      const event = new CustomEvent("lumina_ai_operation", { detail: logEntry });
+      window.dispatchEvent(event);
+    }
+  }
 }
-
 export function getFriendlyScanError(error) {
   const code = String(error?.code || "").toLowerCase();
   const details = String(error?.details?.message || error?.details || "");

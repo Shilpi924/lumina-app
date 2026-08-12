@@ -100,7 +100,12 @@ export default function ScanLandingSection({
             ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
             margin: 0,
           }}
-          onClick={() => {
+          onClick={(evt) => {
+            if (isOffline) {
+              evt.preventDefault();
+              setError("You are offline. Scans are temporarily disabled.");
+              return;
+            }
             setCameraIdle(false);
             handleScanPickerClick();
           }}
@@ -123,7 +128,12 @@ export default function ScanLandingSection({
             ...(isOffline ? { opacity: 0.5, cursor: "not-allowed" } : {}),
             margin: 0,
           }}
-          onClick={() => {
+          onClick={(evt) => {
+            if (isOffline) {
+              evt.preventDefault();
+              setError("You are offline. Scans are temporarily disabled.");
+              return;
+            }
             setCameraIdle(false);
           }}
         >

@@ -1179,12 +1179,25 @@ function getScanConfidenceDisplayLabel(book) {
   return label;
 }
 
+function cleanTitleOrAuthor(text) {
+  if (!text) return "";
+  let clean = String(text).trim();
+  clean = clean.replace(/^(by\s+|author:\s*)/i, "");
+  clean = clean.replace(/^["'“](.*?)["'”]$/, "$1");
+  clean = clean.replace(/\s+/g, " ");
+  return clean.trim();
+}
+
 function enrichScannedBook(book) {
   const confidence = getScanConfidence(book);
   const shelfLocation = String(book?.shelfLocation || "").trim();
+  const cleanedTitle = cleanTitleOrAuthor(book?.title || "Unknown Book");
+  const cleanedAuthor = cleanTitleOrAuthor(book?.author || "Unknown");
 
   return {
     ...book,
+    title: cleanedTitle,
+    author: cleanedAuthor,
     shelfLocation:
       shelfLocation ||
       "Shelf location was not captured for this book. Scan the shelf again to get row, side, and order details.",
@@ -1375,6 +1388,38 @@ export default function App() {
   const [avatarMouth, setAvatarMouth] = useState("smile");
   const [avatarBgImage, setAvatarBgImage] = useState(null);
 
+  const [aiLogs, setAiLogs] = useState(() => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        return JSON.parse(window.localStorage.getItem("lumina_ai_observability_logs") || "[]");
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  const logAiOperation = useCallback((op) => {
+    setAiLogs((current) => {
+      const next = [{ ...op, timestamp: new Date().toISOString() }, ...current].slice(0, 10);
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem("lumina_ai_observability_logs", JSON.stringify(next));
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleAiOperation = (e) => {
+      const op = e.detail;
+      logAiOperation(op);
+    };
+    window.addEventListener("lumina_ai_operation", handleAiOperation);
+    return () => {
+      window.removeEventListener("lumina_ai_operation", handleAiOperation);
+    };
+  }, [logAiOperation]);
+
   const [imagePreview, setImagePreview] = useState(null);
   const [shelfPhotoHistory, setShelfPhotoHistory] = useState([]);
   const [books, setBooks] = useState([]);
@@ -1496,6 +1541,7 @@ export default function App() {
     deleteFolder,
     toggleBookTag,
     saveLocalPreviewFile,
+    updateBookReadingStatus,
   } = useLibrary({ setSaveStatus });
   const [idleBursts, setIdleBursts] = useState([]);
   const [savedArtActive, setSavedArtActive] = useState(false);
@@ -2419,6 +2465,11 @@ Do not include explanations.
   }
 
 
+function getCleanQueryString(str) {
+  if (!str) return "";
+  return str.replace(/[:()[\]"'“”’\-]/g, " ").replace(/\s+/g, " ").trim();
+}
+
   async function verifyScannedBooksWithGoogleBooks(scannedBooks) {
     if (!isFirebaseConfigured || !cloudFunctions) return scannedBooks;
 
@@ -2426,7 +2477,9 @@ Do not include explanations.
     
     const verificationPromises = scannedBooks.slice(0, 10).map(async (book) => {
       try {
-        const query = `intitle:${book.title} ${book.author && book.author !== "Unknown" ? `inauthor:${book.author}` : ""}`;
+        const cleanTitleQuery = getCleanQueryString(book.title);
+        const cleanAuthorQuery = getCleanQueryString(book.author);
+        const query = `intitle:${cleanTitleQuery}${cleanAuthorQuery && cleanAuthorQuery !== "Unknown" ? ` inauthor:${cleanAuthorQuery}` : ""}`;
         const response = await searchGoogleBooks({ query: query, limit: 3 });
         const items = response.data?.items || [];
         if (items.length > 0) {
@@ -2909,6 +2962,16 @@ Important:
     });
 
     closeManualBookModal();
+  }
+
+  function handleUpdateReadingStatus(book, status) {
+    updateBookReadingStatus(book, status);
+    setSelectedBook((current) => {
+      if (current && getBookKey(current) === getBookKey(book)) {
+        return { ...current, readingStatus: status };
+      }
+      return current;
+    });
   }
 
   function addJourneyBookToStash(book) {
@@ -3446,6 +3509,9 @@ Important:
     const bookKey = getBookKey(book) || `${book.title}-${index}`;
     const shelfLocationOpen = Boolean(openShelfLocations[bookKey]);
 
+    const libraryBook = readingList.find((b) => getBookKey(b) === bookKey);
+    const readingStatus = libraryBook?.readingStatus || book.readingStatus || "To Read";
+
     return (
       <div
         key={`${book.title}-${options.prefix || "book"}-${index}`}
@@ -3456,10 +3522,35 @@ Important:
           border: `3px solid ${theme.border}`,
         }}
         onClick={() => {
-          setSelectedBook(book);
+          setSelectedBook(libraryBook || book);
           setSimilarBooksView(null);
         }}
       >
+        {favoriteSaved && (
+          <span
+            style={{
+              position: "absolute",
+              top: "12px",
+              left: "12px",
+              fontSize: "10px",
+              fontWeight: "800",
+              padding: "2px 8px",
+              borderRadius: "10px",
+              color: "#fff",
+              backgroundColor:
+                readingStatus === "Finished"
+                  ? "#22c55e"
+                  : readingStatus === "Reading"
+                  ? "#f59e0b"
+                  : "#6b7280",
+              textTransform: "uppercase",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+              zIndex: 2,
+            }}
+          >
+            {readingStatus}
+          </span>
+        )}
         {!options.compact && (
           <button
             type="button"
@@ -3489,7 +3580,7 @@ Important:
 
         {options.prefix !== "library" && options.prefix !== "saved-file" && (
           <div style={{ ...styles.metaPillRow, display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
-            <span style={styles.metaPill}>{confidence}</span>
+            <span style={styles.metaPill} title={book.confidenceReason || "Estimated from shelf visual evidence"}>{confidence}</span>
             {book.scanType && (
               <span style={{
                 ...styles.metaPill,
@@ -4498,6 +4589,8 @@ Important:
         savedFiles={savedFiles}
         folders={folders}
         reviews={reviews}
+        aiLogs={aiLogs}
+        setAiLogs={setAiLogs}
       />
     );
   }
@@ -5202,6 +5295,38 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
                     selectedBook={selectedBook}
                     styles={styles}
                   />
+
+                  {isBookInReadingList(selectedBook) && (
+                    <div style={{
+                      backgroundColor: "var(--card-bg)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "12px",
+                      padding: "12px",
+                      margin: "12px 0",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}>
+                      <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)" }}>Reading Status</span>
+                      <select
+                        value={selectedBook.readingStatus || "To Read"}
+                        onChange={(e) => handleUpdateReadingStatus(selectedBook, e.target.value)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid var(--border)",
+                          backgroundColor: "var(--bg)",
+                          color: "var(--text)",
+                          fontWeight: "600",
+                          fontSize: "13px",
+                        }}
+                      >
+                        <option value="To Read">To Read</option>
+                        <option value="Reading">Reading</option>
+                        <option value="Finished">Finished</option>
+                      </select>
+                    </div>
+                  )}
 
                 {renderCollapsibleSection({
                   id: "detailNotes",
@@ -6308,7 +6433,7 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
         })}
         </div>
       </nav>
-      <ChatBox user={user} readingList={readingList} savedFiles={savedFiles} />
+      <ChatBox user={user} readingList={readingList} savedFiles={savedFiles} isOffline={isOffline} />
 
       {toast && (
         <div

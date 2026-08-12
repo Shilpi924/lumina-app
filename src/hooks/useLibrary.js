@@ -211,6 +211,14 @@ export function useLibrary({ setSaveStatus }) {
     }
   }
 
+  function updateBookReadingStatus(book, status) {
+    if (!book) return;
+    const bookKey = getBookKey(book);
+    setReadingList((current) =>
+      current.map((b) => (getBookKey(b) === bookKey ? { ...b, readingStatus: status } : b))
+    );
+  }
+
   return {
     readingList, setReadingList,
     savedFiles, setSavedFiles,
@@ -227,5 +235,6 @@ export function useLibrary({ setSaveStatus }) {
     deleteFolder,
     toggleBookTag,
     saveLocalPreviewFile,
+    updateBookReadingStatus,
   };
 }

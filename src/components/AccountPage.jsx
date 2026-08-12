@@ -46,11 +46,14 @@ export default function AccountPage({
   savedFiles = [],
   folders = [],
   reviews = {},
+  aiLogs = [],
+  setAiLogs,
 }) {
   const isSignUp = authMode === "signup";
   const accountUser = isSyncUser(user) ? user : null;
 
   const [achievementsOpen, setAchievementsOpen] = useState(true);
+  const [aiObservabilityOpen, setAiObservabilityOpen] = useState(false);
   const [weeklyGoal, setWeeklyGoal] = useState(() => {
     if (typeof window !== "undefined" && window.localStorage) {
       return window.localStorage.getItem("lumina_weekly_reading_goal") || "3";
@@ -775,10 +778,157 @@ export default function AccountPage({
     );
   };
 
+  const renderAiObservabilitySection = () => {
+    const totalOps = aiLogs.length;
+    const avgLatency = totalOps > 0
+      ? Math.round(aiLogs.reduce((acc, log) => acc + (log.latency || 0), 0) / totalOps)
+      : 0;
+    const totalTokens = aiLogs.reduce((acc, log) => acc + (log.totalTokens || 0), 0);
+
+    const clearAiLogs = () => {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem("lumina_ai_observability_logs");
+      }
+      setAiLogs([]);
+    };
+
+    return (
+      <section
+        style={{
+          ...styles.sectionPanel,
+          backgroundColor: "var(--card-bg)",
+          border: "1px solid var(--border)",
+          borderRadius: "16px",
+          padding: "16px",
+          marginTop: "16px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.02)",
+        }}
+      >
+        <div
+          onClick={() => setAiObservabilityOpen(!aiObservabilityOpen)}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            cursor: "pointer",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "20px" }}>📊</span>
+            <h3 style={{ fontSize: "16px", fontWeight: "700", color: "var(--text)", margin: 0 }}>
+              AI Observability Dashboard
+            </h3>
+            <span
+              style={{
+                fontSize: "11px",
+                backgroundColor: "var(--accent-glow)",
+                color: "var(--accent)",
+                padding: "2px 8px",
+                borderRadius: "12px",
+                fontWeight: "600",
+              }}
+            >
+              {totalOps} Logged
+            </span>
+          </div>
+          <span
+            style={{
+              fontSize: "14px",
+              color: "var(--text-l)",
+              transform: aiObservabilityOpen ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.2s",
+            }}
+          >
+            ▼
+          </span>
+        </div>
+
+        {aiObservabilityOpen && (
+          <div style={{ marginTop: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginBottom: "16px" }}>
+              <div style={{ backgroundColor: "var(--bg)", border: "1px solid var(--border)", borderRadius: "12px", padding: "10px", textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "var(--text-l)", fontWeight: "600" }}>Avg Latency</div>
+                <div style={{ fontSize: "16px", fontWeight: "800", color: "var(--accent)", marginTop: "4px" }}>{avgLatency}ms</div>
+              </div>
+              <div style={{ backgroundColor: "var(--bg)", border: "1px solid var(--border)", borderRadius: "12px", padding: "10px", textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "var(--text-l)", fontWeight: "600" }}>Total Tokens</div>
+                <div style={{ fontSize: "16px", fontWeight: "800", color: "#8b5cf6", marginTop: "4px" }}>{totalTokens}</div>
+              </div>
+              <div style={{ backgroundColor: "var(--bg)", border: "1px solid var(--border)", borderRadius: "12px", padding: "10px", textAlign: "center" }}>
+                <div style={{ fontSize: "11px", color: "var(--text-l)", fontWeight: "600" }}>Operations</div>
+                <div style={{ fontSize: "16px", fontWeight: "800", color: "#06b6d4", marginTop: "4px" }}>{totalOps}</div>
+              </div>
+            </div>
+
+            {totalOps === 0 ? (
+              <p style={{ textAlign: "center", fontSize: "13px", color: "var(--text-l)", margin: "16px 0" }}>
+                No AI operations logged yet. Run a shelf scan or chat to see metrics!
+              </p>
+            ) : (
+              <>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "250px", overflowY: "auto", paddingRight: "4px" }}>
+                  {aiLogs.map((log, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        backgroundColor: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "10px",
+                        padding: "8px 12px",
+                        fontSize: "12px",
+                      }}
+                    >
+                      <div style={{ textAlign: "left" }}>
+                        <div style={{ fontWeight: "700", color: "var(--text)" }}>{log.type}</div>
+                        <div style={{ fontSize: "10px", color: "var(--text-l)", marginTop: "2px" }}>
+                          {log.model} ({log.provider})
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontWeight: "600", color: log.status === "success" ? "#22c55e" : "#ef4444" }}>
+                          {log.latency}ms
+                        </div>
+                        <div style={{ fontSize: "10px", color: "var(--text-l)", marginTop: "2px" }}>
+                          {log.totalTokens} tokens
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={clearAiLogs}
+                  style={{
+                    width: "100%",
+                    marginTop: "12px",
+                    backgroundColor: "transparent",
+                    color: "#ef4444",
+                    border: "1px solid rgba(239, 68, 68, 0.3)",
+                    borderRadius: "10px",
+                    padding: "8px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                  }}
+                >
+                  Clear Observability Logs
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </section>
+    );
+  };
+
   return (
     <>
       {renderAuthSection()}
       {renderAchievementsSection()}
+      {renderAiObservabilitySection()}
       {renderLibraryCards()}
       {canOpenDeveloper && renderDeveloperPage()}
       <div style={{ marginTop: '32px', textAlign: 'center', color: 'var(--text-l)', fontSize: '12px', paddingBottom: '24px' }}>

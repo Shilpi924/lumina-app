@@ -26,7 +26,7 @@ function getAIResponseText(result) {
   return text;
 }
 
-export default function ChatBox({ readingList }) {
+export default function ChatBox({ readingList, isOffline = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     { role: 'model', text: 'Hi! I am Lumina, your virtual librarian. 📚 How can I help you find your next read?' }
@@ -195,19 +195,35 @@ export default function ChatBox({ readingList }) {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="chatbox-input">
+          {isOffline && (
+            <div style={{
+              fontSize: '11px',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              color: '#ef4444',
+              padding: '6px 12px',
+              textAlign: 'center',
+              borderTop: '1px solid var(--border)',
+              fontWeight: '600'
+            }}>
+              ⚠️ You are offline. Chat is temporarily disabled.
+            </div>
+          )}
+
+          <div className="chatbox-input" style={isOffline ? { opacity: 0.6 } : {}}>
             <input
               type="text"
-              placeholder="Ask about books..."
+              placeholder={isOffline ? "Chat is disabled offline..." : "Ask about books..."}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              onKeyDown={(e) => e.key === 'Enter' && !isOffline && handleSend()}
+              disabled={isOffline}
             />
             <button 
               className={`chatbox-mic-button ${isListening ? 'listening' : ''}`}
-              onClick={startListening}
+              onClick={isOffline ? undefined : startListening}
               title="Voice Input"
               type="button"
+              disabled={isOffline}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
@@ -215,7 +231,7 @@ export default function ChatBox({ readingList }) {
                 <line x1="12" y1="19" x2="12" y2="22" />
               </svg>
             </button>
-            <button className="chatbox-send-button" onClick={handleSend} disabled={isLoading || !input.trim()}>
+            <button className="chatbox-send-button" onClick={handleSend} disabled={isOffline || isLoading || !input.trim()}>
               ➤
             </button>
           </div>

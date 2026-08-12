@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export default function SavedBooksPage({
   folders,
   readingList,
@@ -20,6 +22,7 @@ export default function SavedBooksPage({
   renderSavedFiles,
   renderScanHistory,
 }) {
+  const [sortOrder, setSortOrder] = useState("dateSaved");
   const visibleFolders = getVisibleFolders(folders);
 
   const unifiedBooks = (() => {
@@ -35,7 +38,20 @@ export default function SavedBooksPage({
         }
       }
     });
-    return [...booksMap.values()];
+    const list = [...booksMap.values()];
+
+    if (sortOrder === "title") {
+      list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    } else if (sortOrder === "author") {
+      list.sort((a, b) => (a.author || "").localeCompare(b.author || ""));
+    } else if (sortOrder === "readingStatus") {
+      const weight = { "Reading": 1, "Finished": 2, "To Read": 3 };
+      list.sort((a, b) => (weight[a.readingStatus || "To Read"] || 3) - (weight[b.readingStatus || "To Read"] || 3));
+    } else {
+      list.sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0));
+    }
+
+    return list;
   })();
 
   return (
@@ -65,6 +81,28 @@ export default function SavedBooksPage({
             +
           </button>
         </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 16px", borderBottom: "1px solid var(--border)", marginBottom: "8px" }}>
+        <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)" }}>Sort by</span>
+        <select
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+          style={{
+            padding: "6px 12px",
+            borderRadius: "8px",
+            border: "1px solid var(--border)",
+            backgroundColor: "var(--card-bg)",
+            color: "var(--text)",
+            fontWeight: "600",
+            fontSize: "13px",
+          }}
+        >
+          <option value="dateSaved">Date Saved</option>
+          <option value="title">Title</option>
+          <option value="author">Author</option>
+          <option value="readingStatus">Reading Status</option>
+        </select>
       </div>
 
       {saveStatus?.type === "folder" && (
