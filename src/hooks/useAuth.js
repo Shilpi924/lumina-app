@@ -104,7 +104,7 @@ export function useAuth({ setCurrentPage }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [setCurrentPage]);
 
   async function handleAuthSubmit(event) {
     event.preventDefault();

@@ -58,6 +58,7 @@ export default function ArShelfSync({
     }, 3500);
 
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, readingDna, readingList]);
 
   function stopCamera() {
