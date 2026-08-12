@@ -465,7 +465,7 @@ export default function AccountPage({
       {renderLibraryCards()}
       {canOpenDeveloper && renderDeveloperPage()}
       <div style={{ marginTop: '32px', textAlign: 'center', color: 'var(--text-l)', fontSize: '12px', paddingBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <a
             href="https://luminapro.web.app/privacy-policy.html"
             target="_blank"
@@ -481,6 +481,20 @@ export default function AccountPage({
             style={{ color: 'var(--text-l)', textDecoration: 'underline' }}
           >
             Terms of Service
+          </a>
+          <a
+            href="mailto:luminapr.antigravity@gmail.com"
+            style={{ color: 'var(--text-l)', textDecoration: 'underline' }}
+          >
+            Contact Support
+          </a>
+          <a
+            href="https://shilpi-portfolio.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--text-l)', textDecoration: 'underline' }}
+          >
+            About Developer
           </a>
         </div>
         <div style={{ marginTop: '8px' }}>&copy; 2026 Shilpi Sharma. All rights reserved.</div>
