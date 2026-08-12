@@ -79,6 +79,10 @@ Lumina is a modern, AI-powered mobile web application designed to help readers o
 - **Personalized Book Recommendations**: Receive AI-driven, highly tailored book suggestions based on your unique tastes.
 - **AI Context**: Seamlessly injects your saved library and reading preferences into the system prompt for highly personalized book recommendations.
 - **Multi-language Support**: Built to interact and provide recommendations across multiple languages.
+- **AI Routing Observability**: Real-time metrics dashboard under the Account panel displaying model routing tiers, latency counters, token counts, and operational logs.
+- **Reading Status Tracking**: Manage your stash with custom reading states (`To Read`, `Reading`, `Finished`) and colored status badges.
+- **Advanced Sorting**: Sort your collection dynamically by Title, Author, Date Saved, and Reading Status.
+- **Offline Resiliency**: Features fallback caches for browser storage quota limits, offline action guards, and automatic online sync replay triggers.
 
 ## 3. Screenshots
 
