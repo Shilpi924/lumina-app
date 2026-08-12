@@ -19,7 +19,7 @@ This backlog groups the next improvements for Lumina by priority and keeps each 
   - No behavior changes in navigation or scan flows
 
 ### 2. Add browser coverage for tester-reported failures
-- Status: Planned
+- Status: Completed
 - Goal: Add end-to-end coverage for flows that have already failed in testing.
 - Target flows:
   - Barcode scanner opens
