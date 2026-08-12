@@ -22,7 +22,7 @@ test.describe('Library & Settings - Voice Filter & Empty States', () => {
               });
             }
             if (this.onend) this.onend();
-          }, 300);
+          }, 2000);
         }
         stop() {
           if (this.onend) this.onend();
