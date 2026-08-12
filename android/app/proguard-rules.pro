@@ -25,3 +25,6 @@
 -keepclasseswithmembers class * {
   @com.getcapacitor.PluginMethod public void *(...);
 }
+
+# Ignore warnings for unused social provider SDKs referenced by Firebase Auth plugin
+-dontwarn com.facebook.**
