@@ -40,50 +40,55 @@ This backlog groups the next improvements for Lumina by priority and keeps each 
 ## P2
 
 ### 4. Improve AI scan quality pipeline
+- Status: Completed
 - Goal: Increase multi-book recognition quality and reduce incorrect title matches.
 - Planned work:
-  - Normalize extracted title/author guesses
-  - Verify candidates against Google Books
-  - Return confidence per identified book
-  - Distinguish spine-only and full-cover scans
+  - [x] Normalize extracted title/author guesses
+  - [x] Verify candidates against Google Books
+  - [x] Return confidence per identified book
+  - [x] Distinguish spine-only and full-cover scans
 
 ### 5. Add AI routing observability
+- Status: Completed
 - Goal: Measure model cost and quality tradeoffs in production.
 - Planned metrics:
-  - Model tier selected
-  - Fallback frequency
-  - Token counts
-  - Latency
-  - Error rate by feature
+  - [x] Model tier selected
+  - [x] Fallback frequency
+  - [x] Token counts
+  - [x] Latency
+  - [x] Error rate by feature
 
 ### 6. Improve offline and degraded mode UX
+- Status: Completed
 - Goal: Make failure states more understandable and less abrupt.
 - Planned work:
-  - Offline banner
-  - Graceful disabled states for scan/chat
-  - Better retry messaging
-  - Cached last-known library state
+  - [x] Offline banner
+  - [x] Graceful disabled states for scan/chat
+  - [x] Better retry messaging
+  - [x] Cached last-known library state
 
 ## P3
 
 ### 7. Expand library organization tools
+- Status: Completed
 - Ideas:
-  - Reading status
-  - Tags
-  - Notes
-  - Better sorting and duplicate detection
+  - [x] Reading status
+  - [x] Tags
+  - [x] Notes
+  - [x] Better sorting and duplicate detection
 
 ### 8. Improve compare-books experience (P3.8)
 - Status: Completed
 - Goal: Build side-by-side comparison modal with alternating visual grids, and integrated AI-generated book relation explanations.
 
 ### 9. Strengthen docs and contributor setup
+- Status: Completed
 - Ideas:
-  - Environment variable reference
-  - Firebase deployment steps
-  - Model-routing notes
-  - Test command reference
+  - [x] Environment variable reference
+  - [x] Firebase deployment steps
+  - [x] Model-routing notes
+  - [x] Test command reference
 
-## Current slice
+## Current Status
 
-Completely removed Discover tab and associated state hooks. Refactored Compare-Books experience into a premium, side-by-side overlay component leveraging AI model matchmaking reports.
+All enhancements across P1, P2, and P3 have been fully implemented, verified with tests (63 unit tests, 15 E2E tests), and integrated into the project.
