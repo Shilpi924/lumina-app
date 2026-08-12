@@ -340,17 +340,26 @@ const compressImage = (file, maxWidth = 1024, quality = 0.8) => {
 
 
 function mergeUniqueByKey(primary = [], secondary = [], getKey = (item) => item?.id) {
-  const merged = [];
-  const seen = new Set();
+  const map = new Map();
 
   [...primary, ...secondary].forEach((item) => {
+    if (!item) return;
     const key = getKey(item);
-    if (!item || !key || seen.has(key)) return;
-    seen.add(key);
-    merged.push(item);
+    if (!key) return;
+    
+    if (map.has(key)) {
+      const existing = map.get(key);
+      const existingTime = new Date(existing.savedAt || existing.updatedAt || 0).getTime();
+      const itemTime = new Date(item.savedAt || item.updatedAt || 0).getTime();
+      if (itemTime > existingTime) {
+        map.set(key, item);
+      }
+    } else {
+      map.set(key, item);
+    }
   });
 
-  return merged;
+  return [...map.values()];
 }
 
 function getVisibleFolders(folders) {
@@ -1409,6 +1418,8 @@ export default function App() {
     return [];
   });
 
+  const [syncTrigger, setSyncTrigger] = useState(0);
+
   const logAiOperation = useCallback((op) => {
     setAiLogs((current) => {
       const next = [{ ...op, timestamp: new Date().toISOString() }, ...current].slice(0, 10);
@@ -1430,20 +1441,7 @@ export default function App() {
     };
   }, [logAiOperation]);
 
-  useEffect(() => {
-    const handleQuotaExceeded = () => {
-      showToast("Storage quota exceeded. Optimizing scan logs and history to free up space.", "error");
-      setAiLogs([]);
-      if (typeof window !== "undefined" && window.localStorage) {
-        window.localStorage.removeItem("lumina_ai_observability_logs");
-      }
-      setScanHistory((current) => current.slice(0, 3));
-    };
-    window.addEventListener("lumina_storage_quota_exceeded", handleQuotaExceeded);
-    return () => {
-      window.removeEventListener("lumina_storage_quota_exceeded", handleQuotaExceeded);
-    };
-  }, []);
+
 
   const [imagePreview, setImagePreview] = useState(null);
   const [shelfPhotoHistory, setShelfPhotoHistory] = useState([]);
@@ -1548,6 +1546,9 @@ export default function App() {
     checkScanLimit,
     incrementScanCount,
   } = useScan({ db, user });
+
+
+
   const [saveStatus, setSaveStatus] = useState(null);
 
   const {
@@ -1578,6 +1579,7 @@ export default function App() {
   const [arModeActive, setArModeActive] = useState(false);
   const [toast, setToast] = useState(null);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const showToast = useCallback((message, type = "info") => {
     setToast({ message, type });
   }, []);
@@ -1589,6 +1591,21 @@ export default function App() {
     }, 4000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    const handleQuotaExceeded = () => {
+      showToast("Storage quota exceeded. Optimizing scan logs and history to free up space.", "error");
+      setAiLogs([]);
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem("lumina_ai_observability_logs");
+      }
+      setScanHistory((current) => current.slice(0, 3));
+    };
+    window.addEventListener("lumina_storage_quota_exceeded", handleQuotaExceeded);
+    return () => {
+      window.removeEventListener("lumina_storage_quota_exceeded", handleQuotaExceeded);
+    };
+  }, [showToast, setScanHistory]);
 
 
 
@@ -1756,6 +1773,7 @@ export default function App() {
     function handleOnline() {
       console.log("Browser went online");
       setIsOffline(false);
+      setSyncTrigger((prev) => prev + 1);
     }
     function handleOffline() {
       console.log("Browser went offline");
@@ -1768,7 +1786,10 @@ export default function App() {
     // navigator.onLine can be a false negative (e.g. captive portals), so verify with a real request.
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       fetch('https://www.google.com/favicon.ico', { mode: 'no-cors', cache: 'no-store' })
-        .then(() => setIsOffline(false))
+        .then(() => {
+          setIsOffline(false);
+          setSyncTrigger((prev) => prev + 1);
+        })
         .catch(() => {});
     }
 
@@ -2124,7 +2145,7 @@ export default function App() {
     }, 500);
 
     return () => window.clearTimeout(saveTimer);
-  }, [user, readingList, savedFiles, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards, readingDna, reviews, readingJourney, scenes]);
+  }, [user, readingList, savedFiles, books, geminiUsage, scanHistory, folders, bookFolders, bookTags, libraryCards, readingDna, reviews, readingJourney, scenes, syncTrigger]);
 
   useEffect(() => {
     previewCacheRef.current = previewCache;
@@ -2492,7 +2513,7 @@ Do not include explanations.
 
 function getCleanQueryString(str) {
   if (!str) return "";
-  return str.replace(/[:()[\]"'“”’\-]/g, " ").replace(/\s+/g, " ").trim();
+  return str.replace(/[:()[\]"'“”’-]/g, " ").replace(/\s+/g, " ").trim();
 }
 
   async function verifyScannedBooksWithGoogleBooks(scannedBooks) {

@@ -34,7 +34,7 @@ test.describe('Library & Settings - Voice Filter & Empty States', () => {
 
       // Mock mediaDevices.getUserMedia
       if (navigator.mediaDevices) {
-        navigator.mediaDevices.getUserMedia = async (constraints) => {
+        navigator.mediaDevices.getUserMedia = async () => {
           if (window.mockMicPermissionDenied) {
             throw new Error('NotAllowedError: Permission denied');
           }
@@ -88,7 +88,6 @@ test.describe('Library & Settings - Voice Filter & Empty States', () => {
 
     // Verify it handles microphone permission failure and shows correct tip
     await expect(page.getByPlaceholder('Search or speak filters...')).toBeVisible();
-    const inputEl = page.locator('input[type="search"]');
     // Check voice search status or error toast/alert is rendered
     const statusText = page.locator('text=Microphone permission is needed');
     await expect(statusText.first()).toBeVisible();
