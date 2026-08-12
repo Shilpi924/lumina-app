@@ -41,7 +41,7 @@ android {
         release {
             minifyEnabled true
             ndk {
-                debugSymbolLevel 'SYMBOL_TABLE'
+                debugSymbolLevel 'FULL'
             }
             signingConfig hasReleaseKeystore ? signingConfigs.release : null
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
