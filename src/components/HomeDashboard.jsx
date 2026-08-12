@@ -100,63 +100,50 @@ export default function HomeDashboard({
 
   return (
     <div style={{ padding: "16px", maxWidth: "1200px", margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ marginBottom: "24px" }}>
-        <h1 style={{ fontSize: "28px", fontWeight: "800", margin: "0 0 8px 0", color: "var(--text)" }}>
-          {greeting}
-        </h1>
-        <p style={{ fontSize: "15px", color: "#64748b", margin: 0 }}>
-          Your knowledge is growing. What will you discover today?
-        </p>
-      </div>
-
-      {/* Stats Row */}
+      {/* Compact Header & Stats Bar */}
       <div style={{ 
-        display: "grid", 
-        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", 
-        gap: "12px", 
-        marginBottom: "24px" 
+        display: "flex", 
+        justifyContent: "space-between", 
+        alignItems: "center", 
+        flexWrap: "wrap", 
+        gap: "16px",
+        marginBottom: "16px",
+        paddingBottom: "12px",
+        borderBottom: "1px solid var(--border)"
       }}>
-        <div style={{ 
-          background: "var(--card-bg)", 
-          borderRadius: "12px", 
-          padding: "16px", 
-          border: "1px solid var(--border)",
-          textAlign: "center"
-        }}>
-          <div style={{ fontSize: "32px", fontWeight: "800", color: "var(--accent)", margin: "0 0 4px 0" }}>
-            {streak}
-          </div>
-          <div style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>
-            Day Streak
-          </div>
+        <div>
+          <h1 style={{ fontSize: "22px", fontWeight: "800", margin: "0 0 4px 0", color: "var(--text)" }}>
+            {greeting}
+          </h1>
+          <p style={{ fontSize: "13px", color: "var(--text-l)", margin: 0 }}>
+            Your knowledge is growing. What will you discover today?
+          </p>
         </div>
+
+        {/* Compact Horizontal Stats Bar (Pill Design) */}
         <div style={{ 
-          background: "var(--card-bg)", 
-          borderRadius: "12px", 
-          padding: "16px", 
-          border: "1px solid var(--border)",
-          textAlign: "center"
+          display: "flex", 
+          gap: "8px", 
+          backgroundColor: "var(--card-bg)", 
+          border: "1px solid var(--border)", 
+          borderRadius: "20px", 
+          padding: "6px 14px",
+          alignItems: "center",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.01)"
         }}>
-          <div style={{ fontSize: "32px", fontWeight: "800", color: "#8b5cf6", margin: "0 0 4px 0" }}>
-            {totalBooks}
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "13px" }}>
+            <span style={{ color: "var(--accent)", fontWeight: "800" }}>{streak}</span>
+            <span style={{ color: "var(--text-l)", fontSize: "11px", fontWeight: "600" }}>Streak</span>
           </div>
-          <div style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>
-            Books Saved
+          <span style={{ color: "var(--border)", fontSize: "12px" }}>|</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "13px" }}>
+            <span style={{ color: "#8b5cf6", fontWeight: "800" }}>{totalBooks}</span>
+            <span style={{ color: "var(--text-l)", fontSize: "11px", fontWeight: "600" }}>Saved</span>
           </div>
-        </div>
-        <div style={{ 
-          background: "var(--card-bg)", 
-          borderRadius: "12px", 
-          padding: "16px", 
-          border: "1px solid var(--border)",
-          textAlign: "center"
-        }}>
-          <div style={{ fontSize: "32px", fontWeight: "800", color: "#06b6d4", margin: "0 0 4px 0" }}>
-            {totalScans}
-          </div>
-          <div style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>
-            Total Scans
+          <span style={{ color: "var(--border)", fontSize: "12px" }}>|</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "13px" }}>
+            <span style={{ color: "#06b6d4", fontWeight: "800" }}>{totalScans}</span>
+            <span style={{ color: "var(--text-l)", fontSize: "11px", fontWeight: "600" }}>Scans</span>
           </div>
         </div>
       </div>
