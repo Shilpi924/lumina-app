@@ -6,7 +6,7 @@ admin.initializeApp();
 
 const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
 const googleBooksApiKey = defineSecret('GOOGLE_BOOKS_API_KEY');
-const CLAUDE_MODEL = 'claude-haiku-4-5';
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
 const API_USAGE_COLLECTION = 'developerApiUsage';
 const API_USAGE_EVENTS_COLLECTION = 'developerApiUsageEvents';
 
@@ -305,13 +305,20 @@ async function callClaude({ contents, generationConfig, model }) {
     throw new HttpsError('failed-precondition', 'Claude API key is not configured.');
   }
 
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01',
+  };
+
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID || '';
+  if (workspaceId) {
+    headers['anthropic-workspace-id'] = workspaceId;
+  }
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
+    headers,
     body: JSON.stringify({
       model,
       max_tokens: getMaxTokens(generationConfig),
@@ -351,71 +358,78 @@ function createClaudeCallable() {
       minInstances: 0,
     },
     async (request) => {
-    const { contents, generationConfig = {}, callType = 'AI call', routing = {} } = request.data || {};
+      try {
+        const { contents, generationConfig = {}, callType = 'AI call', routing = {} } = request.data || {};
 
-    if (!request.auth?.uid && callType !== 'Chat') {
-      throw new HttpsError('unauthenticated', 'Sign in to use AI scanning.');
-    }
+        if (!request.auth?.uid && callType !== 'Chat') {
+          throw new HttpsError('unauthenticated', 'Sign in to use AI scanning.');
+        }
 
+        const ipAddress = getRequestIp(request);
+        const route = selectModelRoute({ contents, generationConfig, callType, routing });
 
-    const ipAddress = getRequestIp(request);
-    const route = selectModelRoute({ contents, generationConfig, callType, routing });
+        if (!Array.isArray(contents) || contents.length === 0) {
+          throw new HttpsError('invalid-argument', 'AI contents are required.');
+        }
 
-    if (!Array.isArray(contents) || contents.length === 0) {
-      throw new HttpsError('invalid-argument', 'AI contents are required.');
-    }
+        const claudeStartTime = Date.now();
+        const claude = await callClaude({
+          contents,
+          generationConfig: { ...generationConfig, _callType: callType },
+          model: CLAUDE_MODEL,
+        });
+        const claudeDurationMs = Date.now() - claudeStartTime;
 
-    const claudeStartTime = Date.now();
-    const claude = await callClaude({
-      contents,
-      generationConfig: { ...generationConfig, _callType: callType },
-      model: CLAUDE_MODEL,
-    });
-    const claudeDurationMs = Date.now() - claudeStartTime;
+        if (!claude.ok) {
+          await recordUsageSafely({
+            auth: request.auth,
+            callType,
+            status: 'Failed',
+            result: claude.result,
+            provider: 'claude',
+            model: claude.model || CLAUDE_MODEL,
+            modelTier: route.modelTier,
+            routeReason: route.routeReason,
+            ipAddress,
+            durationMs: claudeDurationMs,
+            inputCharCount: route.inputCharCount,
+            includesImage: route.includesImage,
+          });
+          throw new HttpsError(
+            getProviderErrorCode(claude.status),
+            getProviderErrorMessage('Claude', claude)
+          );
+        }
 
-    if (!claude.ok) {
-      await recordUsageSafely({
-        auth: request.auth,
-        callType,
-        status: 'Failed',
-        result: claude.result,
-        provider: 'claude',
-        model: claude.model || CLAUDE_MODEL,
-        modelTier: route.modelTier,
-        routeReason: route.routeReason,
-        ipAddress,
-        durationMs: claudeDurationMs,
-        inputCharCount: route.inputCharCount,
-        includesImage: route.includesImage,
-      });
-      throw new HttpsError(
-        getProviderErrorCode(claude.status),
-        getProviderErrorMessage('Claude', claude)
-      );
-    }
+        await recordUsageSafely({
+          auth: request.auth,
+          callType,
+          status: 'Success',
+          result: claude.result,
+          provider: 'claude',
+          model: claude.model,
+          modelTier: route.modelTier,
+          routeReason: route.routeReason,
+          ipAddress,
+          durationMs: claudeDurationMs,
+          inputCharCount: route.inputCharCount,
+          includesImage: route.includesImage,
+        });
 
-    await recordUsageSafely({
-      auth: request.auth,
-      callType,
-      status: 'Success',
-      result: claude.result,
-      provider: 'claude',
-      model: claude.model,
-      modelTier: route.modelTier,
-      routeReason: route.routeReason,
-      ipAddress,
-      durationMs: claudeDurationMs,
-      inputCharCount: route.inputCharCount,
-      includesImage: route.includesImage,
-    });
-
-    return {
-      ...claude.result,
-      modelTier: route.modelTier,
-      routeReason: route.routeReason,
-      provider: 'claude',
-      model: claude.model,
-    };
+        return {
+          ...claude.result,
+          modelTier: route.modelTier,
+          routeReason: route.routeReason,
+          provider: 'claude',
+          model: claude.model,
+        };
+      } catch (error) {
+        console.error('UNCAUGHT EXCEPTION IN generateClaudeContent:', error);
+        if (error instanceof HttpsError) {
+          throw error;
+        }
+        throw new HttpsError('internal', `Server error: ${error?.message || String(error)}`, error?.stack);
+      }
     }
   );
 }
@@ -431,9 +445,12 @@ export const searchGoogleBooks = onCall(
     memory: '256MiB',
   },
   async (request) => {
-    const { params } = request.data || {};
-    if (!params) {
-      throw new HttpsError('invalid-argument', 'Search parameters are required.');
+    const rawData = request.data || {};
+    const params = (typeof rawData.params === 'object' && rawData.params !== null) ? rawData.params : rawData;
+    const query = params.q || params.query || (params.isbn ? `isbn:${params.isbn}` : '');
+    
+    if (!query) {
+      throw new HttpsError('invalid-argument', 'Search parameters (query or q) are required.');
     }
 
     const apiKey = googleBooksApiKey.value();
@@ -441,7 +458,14 @@ export const searchGoogleBooks = onCall(
       throw new HttpsError('failed-precondition', 'Google Books API key is not configured.');
     }
 
-    const searchParams = new URLSearchParams(params);
+    const searchParams = new URLSearchParams();
+    searchParams.set('q', query);
+    if (params.maxResults || params.limit) {
+      searchParams.set('maxResults', String(params.maxResults || params.limit));
+    }
+    if (params.printType) searchParams.set('printType', params.printType);
+    if (params.orderBy) searchParams.set('orderBy', params.orderBy);
+    if (params.fields) searchParams.set('fields', params.fields);
     searchParams.set('key', apiKey); // Inject secret key
 
     const url = `https://www.googleapis.com/books/v1/volumes?${searchParams.toString()}`;

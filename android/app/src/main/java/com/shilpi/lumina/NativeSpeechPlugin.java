@@ -29,21 +29,30 @@ public class NativeSpeechPlugin extends Plugin {
 
     @PluginMethod
     public void start(PluginCall call) {
-        if (getPermissionState("microphone") != PermissionState.GRANTED) {
-            requestPermissionForAlias("microphone", call, "microphonePermissionCallback");
-            return;
-        }
-
-        startListening(call);
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (getPermissionState("microphone") != PermissionState.GRANTED) {
+                    requestPermissionForAlias("microphone", call, "microphonePermissionCallback");
+                    return;
+                }
+                startListening(call);
+            }
+        });
     }
 
     @PermissionCallback
     private void microphonePermissionCallback(PluginCall call) {
-        if (getPermissionState("microphone") == PermissionState.GRANTED) {
-            startListening(call);
-        } else {
-            call.reject("Microphone permission is needed.");
-        }
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (getPermissionState("microphone") == PermissionState.GRANTED) {
+                    startListening(call);
+                } else {
+                    call.reject("Microphone permission is needed.");
+                }
+            }
+        });
     }
 
     private void startListening(PluginCall call) {

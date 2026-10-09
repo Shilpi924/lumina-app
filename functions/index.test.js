@@ -39,9 +39,9 @@ async function verifyClaudeOnly(callable) {
     assert.equal(requests[0].url, 'https://api.anthropic.com/v1/messages');
     assert.equal(requests[0].options.headers['x-api-key'], 'test-anthropic-key');
     const requestBody = JSON.parse(requests[0].options.body);
-    assert.equal(requestBody.model, 'claude-haiku-4-5');
+    assert.equal(requestBody.model, 'claude-haiku-4-5-20251001');
     assert.equal(result.provider, 'claude');
-    assert.equal(result.model, 'claude-haiku-4-5');
+    assert.equal(result.model, 'claude-haiku-4-5-20251001');
     assert.equal(result.text, '{"books":[]}');
     assert.equal(result.usageMetadata.totalTokenCount, 18);
     assert.equal(requests.some(({ url }) => /gemini|generativelanguage/i.test(url)), false);

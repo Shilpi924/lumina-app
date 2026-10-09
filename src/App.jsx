@@ -84,7 +84,7 @@ const BOOK_BARCODE_FORMATS = [
   BarcodeFormat.UpcA,
   BarcodeFormat.UpcE,
 ];
-const MODEL_NAME = "claude-haiku-4-5";
+const MODEL_NAME = "claude-haiku-4-5-20251001";
 const GOOGLE_BOOKS_PREVIEW_TIMEOUT_MS = 10000;
 const GOOGLE_BOOKS_PREVIEW_STALE_MS = GOOGLE_BOOKS_PREVIEW_TIMEOUT_MS + 3000;
 const ONE_MINUTE_MS = 60 * 1000;
@@ -1568,6 +1568,7 @@ export default function App() {
     toggleBookTag,
     saveLocalPreviewFile,
     updateBookReadingStatus,
+    updateBookProgress,
   } = useLibrary({ setSaveStatus });
   const [idleBursts, setIdleBursts] = useState([]);
   const [savedArtActive, setSavedArtActive] = useState(false);
@@ -1610,6 +1611,7 @@ export default function App() {
 
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("");
   const [isOffline, setIsOffline] = useState(() => (
@@ -2395,7 +2397,7 @@ Do not include explanations.
                 },
                 {
                   inlineData: {
-                    mimeType: file.type || "image/jpeg",
+                    mimeType: compressedFile.type || "image/jpeg",
                     data: base64,
                   },
                 },
@@ -2636,7 +2638,7 @@ function getCleanQueryString(str) {
       }
 
       await ensureScanAuth();
-      const compressedFile = await compressImage(file);
+      const compressedFile = await compressImage(file, 960, 0.75);
       const base64 = await encodeFileToBase64(compressedFile);
       recordLocalScanUsage(quotaUser);
       beginClaudeCall("Bookshelf scan");
@@ -2648,67 +2650,57 @@ function getCleanQueryString(str) {
           parts: [
             {
               text: `
-You are a careful library bookshelf assistant.
+Examine this image carefully as a library assistant.
 
-Look at this bookshelf image. Detect visible book titles from every readable surface: front covers, back covers, tilted books, stacked books, and book spines. Do not focus only on spines.
+VALIDATION REQUIREMENT:
+First, check if this image contains books (book covers, book spines, stacks of books, or a bookshelf).
+If the image does NOT contain books (for example: food, animals, landscapes, furniture, cars, random objects, faces, or non-book items):
+You MUST set "isBook": false, "noBooksReason": "No books detected in this photo. Please take a clear picture of book spines or covers.", and "books": [].
+Never guess or convert text from non-book items into book titles.
 
-Return ONLY valid JSON in this exact format:
+EXTRACTION (Only when books are present):
+- Set "isBook": true, "noBooksReason": "".
+- Detect visible books from readable spines and covers (up to 10 books max).
+- Keep all summaries and bios to 1 concise sentence for maximum speed and token efficiency.
+- Only include books with readable text; do not hallucinate.
 
+Return ONLY valid JSON in this exact structure:
 {
+  "isBook": true,
+  "noBooksReason": "",
   "books": [
     {
       "title": "Book title",
       "author": "Author name or Unknown",
-      "authorBio": "Short 1-2 sentence description of the author",
+      "authorBio": "1 short sentence about author",
       "rating": 4.5,
-      "ratingSource": "Goodreads, Amazon, Google Books, or Estimated",
-      "summary": "Short useful summary",
+      "ratingSource": "Estimated",
+      "summary": "1 concise sentence summary",
       "genre": "Genre",
       "readingLevel": "Easy / Intermediate / Advanced",
       "gradeBand": "K-3 / 4-6 / 7+",
       "ageRecommendation": "Kids / Young Readers / Teen / Adult / All ages",
-      "whyRead": "Why someone may like this book",
-      "shelfPick": "Top Rated / Hidden Gem / Beginner Friendly / Popular / Educational",
-      "shelfLocation": "Very detailed location in the photo, such as top row left side, middle row center, bottom row right side, third book from the left, leaning behind another book, or partly hidden",
+      "whyRead": "1 brief sentence reason to read",
+      "shelfPick": "Top Rated / Hidden Gem / Beginner Friendly / Popular",
+      "shelfLocation": "Brief location (e.g. top shelf left)",
       "scanConfidence": "Confidence: high / Confidence: medium / Confidence: low",
-      "confidenceReason": "Brief note about what readable text or visual evidence supports this identification",
+      "confidenceReason": "Brief evidence (e.g. clear spine title)",
       "scanType": "spine or cover"
     }
   ]
 }
-
-Important:
-- Inspect front cover faces and large cover titles before spines when covers are visible.
-- Prefer a partial but honest title over a confident wrong title. If the title is partly visible, include the readable words and set scanConfidence to low.
-- If rating is not visible, estimate a general public rating.
-- If exact rating source is unknown, use "Estimated".
-- Include a short author biography.
-- Choose gradeBand carefully:
-  - K-3 for grade 3 and below
-  - 4-6 for grade 4 to grade 6
-  - 7+ for grade 7 and above or teen/adult books
-- Include at most 12 books.
-- Do NOT hallucinate, guess, or invent books.
-- Only list books if at least one meaningful title or author word is readable on a spine, front cover, or back cover.
-- If an object is not clearly a book with readable text, ignore it.
-- If several books are visible but not readable, omit them rather than filling in likely titles.
-- For shelfLocation, describe exactly where the book appears in the image:
-  row from top to bottom, left/middle/right section, order from left or right,
-  whether it is vertical, horizontal, leaning, stacked, partly hidden, or near
-  another visible book.
-- Keep summaries short.
-                `,
+`,
             },
             {
               inlineData: {
-                mimeType: file.type || "image/jpeg",
+                mimeType: compressedFile.type || "image/jpeg",
                 data: base64,
               },
             },
           ],
         },
       ], {
-        maxOutputTokens: 4096,
+        maxOutputTokens: 1536,
         responseMimeType: "application/json",
       }, "Bookshelf scan");
 
@@ -2716,9 +2708,11 @@ Important:
 
       const parsed = safeParseJson(text);
 
-      if (!parsed?.books || !Array.isArray(parsed.books) || parsed.books.length === 0) {
+      if (parsed?.isBook === false || !parsed?.books || !Array.isArray(parsed.books) || parsed.books.length === 0) {
         setLoading(false);
-        showToast("Hey bestie! ✨ This app is only for books. Please upload a picture of a bookshelf or book covers!", "error");
+        const rejectionMsg = parsed?.noBooksReason || "No books detected in this photo. Please take a clear picture of book spines or covers.";
+        setError(rejectionMsg);
+        showToast(rejectionMsg, "error");
         return;
       }
 
@@ -3023,6 +3017,27 @@ Important:
     });
   }
 
+  function handleUpdateReadingProgress(book, currentPage, totalPages) {
+    updateBookProgress(book, currentPage, totalPages);
+    setSelectedBook((current) => {
+      if (current && getBookKey(current) === getBookKey(book)) {
+        const validTotal = Math.max(1, Number(totalPages || current.totalPages || current.pageCount || 300));
+        const validCurrent = Math.max(0, Math.min(validTotal, Number(currentPage !== undefined ? currentPage : (current.currentPage || 0))));
+        const autoStatus = validCurrent >= validTotal ? "Finished" : (validCurrent > 0 ? "Reading" : (current.readingStatus || "To Read"));
+        if (autoStatus === "Finished" && current.readingStatus !== "Finished") {
+          showToast(`🎉 Congratulations on finishing "${book.title}"!`, "success");
+        }
+        return {
+          ...current,
+          currentPage: validCurrent,
+          totalPages: validTotal,
+          readingStatus: autoStatus,
+        };
+      }
+      return current;
+    });
+  }
+
   function addJourneyBookToStash(book) {
     const newBook = {
       ...book,
@@ -3056,6 +3071,13 @@ Important:
   }
 
   const AVAILABLE_TAGS = ["🌶️", "😭", "✨", "🤯", "💀", "📖", "🎧"];
+  const allUniqueTags = (() => {
+    const tagsSet = new Set(AVAILABLE_TAGS);
+    Object.values(bookTags || {}).forEach((tags) => {
+      (tags || []).forEach((t) => tagsSet.add(t));
+    });
+    return [...tagsSet];
+  })();
 
 
 
@@ -3627,6 +3649,28 @@ Important:
 
         <h3 style={{ ...styles.cardTitle, color: theme.title }}>{book.title}</h3>
 
+        {libraryBook && (readingStatus === "Reading" || (libraryBook.currentPage > 0 && readingStatus !== "Finished")) && (
+          <div style={{ margin: "4px 0 8px", width: "100%" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "var(--text-l)", fontWeight: "700", marginBottom: "4px" }}>
+              <span>📖 Page {libraryBook.currentPage || 0} / {libraryBook.totalPages || libraryBook.pageCount || 300}</span>
+              <span style={{ color: "var(--accent)", fontWeight: "800" }}>
+                {Math.min(100, Math.round(((libraryBook.currentPage || 0) / (libraryBook.totalPages || libraryBook.pageCount || 300)) * 100))}%
+              </span>
+            </div>
+            <div style={{ height: "6px", borderRadius: "3px", background: "var(--border)", overflow: "hidden" }}>
+              <div
+                style={{
+                  width: `${Math.min(100, Math.round(((libraryBook.currentPage || 0) / (libraryBook.totalPages || libraryBook.pageCount || 300)) * 100))}%`,
+                  height: "100%",
+                  background: "linear-gradient(90deg, #6366f1, #a855f7)",
+                  borderRadius: "3px",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {options.prefix !== "library" && options.prefix !== "saved-file" && (
           <div style={{ ...styles.metaPillRow, display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
             <span style={styles.metaPill} title={book.confidenceReason || "Estimated from shelf visual evidence"}>{confidence}</span>
@@ -3932,97 +3976,116 @@ Important:
           </p>
         )}
 
-        {filtersOpen && <div style={styles.filterGrid}>
-          <label style={styles.filterLabel}>
-            <span>Genre</span>
-            <select
-              style={styles.filterControl}
-              value={filters.genre || ""}
-              onChange={(event) => updateFilter("genre", event.target.value)}
-            >
-              <option value="">Any genre</option>
-              {genreOptions.map((genre) => (
-                <option key={genre} value={genre}>
-                  {genre}
-                </option>
-              ))}
-            </select>
-          </label>
+        {filtersOpen && (
+          <div>
+            <div className="vibe-chips-container" style={styles.vibeChipsContainer}>
+              {FILTER_OPTIONS.vibe.map((v) => {
+                const isSelected = filters.vibe === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => updateFilter("vibe", isSelected ? "" : v)}
+                    style={{
+                      ...styles.vibeChip,
+                      ...(isSelected ? styles.vibeChipActive : {}),
+                    }}
+                  >
+                    {v}
+                  </button>
+                );
+              })}
+            </div>
 
-          <label style={styles.filterLabel}>
-            <span>Vibe Check</span>
-            <select
-              style={styles.filterControl}
-              value={filters.vibe || ""}
-              onChange={(event) => updateFilter("vibe", event.target.value)}
-            >
-              <option value="">Any vibe</option>
-              {FILTER_OPTIONS.vibe.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </label>
+            <div style={{ display: "flex", justifyContent: "center", margin: "8px 0" }}>
+              <button
+                type="button"
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                style={styles.advancedToggleBtn}
+              >
+                {showAdvancedFilters ? "⚙️ Hide Advanced Filters" : "⚙️ Show Advanced Filters"}
+              </button>
+            </div>
 
-          <label style={styles.filterLabel}>
-            <span>Rating</span>
-            <select
-              style={styles.filterControl}
-              value={filters.minRating}
-              onChange={(event) => updateFilter("minRating", event.target.value)}
-            >
-              <option value="">Any rating</option>
-              {FILTER_OPTIONS.minRating.map((rating) => (
-                <option key={rating} value={rating}>
-                  {rating}+ stars
-                </option>
-              ))}
-            </select>
-          </label>
+            {showAdvancedFilters && (
+              <div style={styles.filterGrid}>
+                <label style={styles.filterLabel}>
+                  <span>Genre</span>
+                  <select
+                    style={styles.filterControl}
+                    value={filters.genre || ""}
+                    onChange={(event) => updateFilter("genre", event.target.value)}
+                  >
+                    <option value="">Any genre</option>
+                    {genreOptions.map((genre) => (
+                      <option key={genre} value={genre}>
+                        {genre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-          <label style={styles.filterLabel}>
-            <span>Reading Level</span>
-            <select
-              style={styles.filterControl}
-              value={filters.readingLevel || ""}
-              onChange={(event) => updateFilter("readingLevel", event.target.value)}
-            >
-              <option value="">Any level</option>
-              {FILTER_OPTIONS.readingLevel.map((level) => (
-                <option key={level} value={level}>{level}</option>
-              ))}
-            </select>
-          </label>
+                <label style={styles.filterLabel}>
+                  <span>Rating</span>
+                  <select
+                    style={styles.filterControl}
+                    value={filters.minRating}
+                    onChange={(event) => updateFilter("minRating", event.target.value)}
+                  >
+                    <option value="">Any rating</option>
+                    {FILTER_OPTIONS.minRating.map((rating) => (
+                      <option key={rating} value={rating}>
+                        {rating}+ stars
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-          <label style={styles.filterLabel}>
-            <span>Grade Band</span>
-            <select
-              style={styles.filterControl}
-              value={filters.gradeBand || ""}
-              onChange={(event) => updateFilter("gradeBand", event.target.value)}
-            >
-              <option value="">Any grade</option>
-              {FILTER_OPTIONS.gradeBand.map((grade) => (
-                <option key={grade} value={grade}>{grade}</option>
-              ))}
-            </select>
-          </label>
+                <label style={styles.filterLabel}>
+                  <span>Reading Level</span>
+                  <select
+                    style={styles.filterControl}
+                    value={filters.readingLevel || ""}
+                    onChange={(event) => updateFilter("readingLevel", event.target.value)}
+                  >
+                    <option value="">Any level</option>
+                    {FILTER_OPTIONS.readingLevel.map((level) => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
+                </label>
 
-          <label style={styles.filterLabel}>
-            <span>Age</span>
-            <select
-              style={styles.filterControl}
-              value={filters.ageRecommendation || ""}
-              onChange={(event) => updateFilter("ageRecommendation", event.target.value)}
-            >
-              <option value="">Any age</option>
-              {FILTER_OPTIONS.ageRecommendation.map((age) => (
-                <option key={age} value={age}>{age}</option>
-              ))}
-            </select>
-          </label>
-        </div>}
+                <label style={styles.filterLabel}>
+                  <span>Grade Band</span>
+                  <select
+                    style={styles.filterControl}
+                    value={filters.gradeBand || ""}
+                    onChange={(event) => updateFilter("gradeBand", event.target.value)}
+                  >
+                    <option value="">Any grade</option>
+                    {FILTER_OPTIONS.gradeBand.map((grade) => (
+                      <option key={grade} value={grade}>{grade}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={styles.filterLabel}>
+                  <span>Age</span>
+                  <select
+                    style={styles.filterControl}
+                    value={filters.ageRecommendation || ""}
+                    onChange={(event) => updateFilter("ageRecommendation", event.target.value)}
+                  >
+                    <option value="">Any age</option>
+                    {FILTER_OPTIONS.ageRecommendation.map((age) => (
+                      <option key={age} value={age}>{age}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
+        )}
       </section>
     );
   }
@@ -4480,7 +4543,7 @@ Important:
         renderCollapsibleSection={renderCollapsibleSection}
         renderBookCard={renderBookCard}
         saveStatus={saveStatus}
-        AVAILABLE_TAGS={AVAILABLE_TAGS}
+        AVAILABLE_TAGS={allUniqueTags}
         renderFavorites={renderFavorites}
         renderSavedFiles={renderSavedFiles}
         renderScanHistory={renderScanHistory}
@@ -4635,6 +4698,7 @@ Important:
         renderLibraryCards={renderLibraryCards}
         canOpenDeveloper={canOpenDeveloper}
         renderDeveloperPage={renderDeveloperPage}
+        readingList={readingList}
         savedFiles={savedFiles}
         folders={folders}
         reviews={reviews}
@@ -4769,7 +4833,7 @@ Make suggestions array exactly 3 books. These should be globally acclaimed books
           },
           {
             inlineData: {
-              mimeType: photoFile.type || "image/jpeg",
+              mimeType: compressed.type || "image/jpeg",
               data: base64,
             },
           },
@@ -5345,37 +5409,191 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
                     styles={styles}
                   />
 
-                  {isBookInReadingList(selectedBook) && (
-                    <div style={{
-                      backgroundColor: "var(--card-bg)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "12px",
-                      padding: "12px",
-                      margin: "12px 0",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}>
-                      <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)" }}>Reading Status</span>
-                      <select
-                        value={selectedBook.readingStatus || "To Read"}
-                        onChange={(e) => handleUpdateReadingStatus(selectedBook, e.target.value)}
-                        style={{
-                          padding: "6px 12px",
-                          borderRadius: "8px",
-                          border: "1px solid var(--border)",
-                          backgroundColor: "var(--bg)",
-                          color: "var(--text)",
-                          fontWeight: "600",
-                          fontSize: "13px",
-                        }}
-                      >
-                        <option value="To Read">To Read</option>
-                        <option value="Reading">Reading</option>
-                        <option value="Finished">Finished</option>
-                      </select>
-                    </div>
-                  )}
+                  {isBookInReadingList(selectedBook) && (() => {
+                    const currentP = Number(selectedBook.currentPage || 0);
+                    const totalP = Math.max(1, Number(selectedBook.totalPages || selectedBook.pageCount || 300));
+                    const pct = Math.min(100, Math.round((currentP / totalP) * 100));
+                    const isReading = selectedBook.readingStatus === "Reading" || (currentP > 0 && selectedBook.readingStatus !== "Finished");
+
+                    return (
+                      <div style={{
+                        backgroundColor: "var(--card-bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "14px",
+                        padding: "14px",
+                        margin: "12px 0",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
+                      }}>
+                        <div style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}>
+                          <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)" }}>Reading Status</span>
+                          <select
+                            value={selectedBook.readingStatus || "To Read"}
+                            onChange={(e) => {
+                              const newStatus = e.target.value;
+                              if (newStatus === "Finished") {
+                                handleUpdateReadingProgress(selectedBook, totalP, totalP);
+                              } else {
+                                handleUpdateReadingStatus(selectedBook, newStatus);
+                              }
+                            }}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "8px",
+                              border: "1px solid var(--border)",
+                              backgroundColor: "var(--bg)",
+                              color: "var(--text)",
+                              fontWeight: "600",
+                              fontSize: "13px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <option value="To Read">To Read</option>
+                            <option value="Reading">Reading</option>
+                            <option value="Finished">Finished</option>
+                          </select>
+                        </div>
+
+                        {isReading && (
+                          <div style={{
+                            marginTop: "4px",
+                            paddingTop: "10px",
+                            borderTop: "1px dashed var(--border)",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "8px"
+                          }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ fontSize: "13px", fontWeight: "700", color: "var(--text)", display: "flex", alignItems: "center", gap: "6px" }}>
+                                📖 Progress Tracker
+                              </span>
+                              <span style={{
+                                fontSize: "12px",
+                                fontWeight: "800",
+                                color: "#fff",
+                                background: "linear-gradient(90deg, #6366f1, #a855f7)",
+                                padding: "2px 8px",
+                                borderRadius: "10px",
+                                boxShadow: "0 1px 4px rgba(99,102,241,0.2)"
+                              }}>
+                                {pct}% Complete
+                              </span>
+                            </div>
+
+                            {/* Progress bar */}
+                            <div style={{ height: "8px", borderRadius: "4px", background: "var(--border)", overflow: "hidden" }}>
+                              <div
+                                style={{
+                                  width: `${pct}%`,
+                                  height: "100%",
+                                  background: "linear-gradient(90deg, #6366f1, #a855f7)",
+                                  borderRadius: "4px",
+                                  transition: "width 0.3s ease",
+                                }}
+                              />
+                            </div>
+
+                            {/* Page counter & input */}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "var(--text-l)" }}>
+                                <span>Page</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={totalP}
+                                  value={currentP}
+                                  onChange={(e) => {
+                                    const val = Math.max(0, Math.min(totalP, Number(e.target.value || 0)));
+                                    handleUpdateReadingProgress(selectedBook, val, totalP);
+                                  }}
+                                  style={{
+                                    width: "60px",
+                                    padding: "4px 8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid var(--border)",
+                                    background: "var(--code-bg)",
+                                    color: "var(--text-h)",
+                                    fontSize: "13px",
+                                    fontWeight: "700",
+                                    textAlign: "center"
+                                  }}
+                                />
+                                <span>of</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={totalP}
+                                  onChange={(e) => {
+                                    const newTot = Math.max(1, Number(e.target.value || 1));
+                                    handleUpdateReadingProgress(selectedBook, Math.min(currentP, newTot), newTot);
+                                  }}
+                                  style={{
+                                    width: "60px",
+                                    padding: "4px 8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid var(--border)",
+                                    background: "var(--code-bg)",
+                                    color: "var(--text-h)",
+                                    fontSize: "13px",
+                                    fontWeight: "700",
+                                    textAlign: "center"
+                                  }}
+                                />
+                              </div>
+
+                              {/* Quick step buttons */}
+                              <div style={{ display: "flex", gap: "4px" }}>
+                                {[-5, 5, 10, 25].map((delta) => (
+                                  <button
+                                    key={delta}
+                                    type="button"
+                                    onClick={() => {
+                                      const next = Math.max(0, Math.min(totalP, currentP + delta));
+                                      handleUpdateReadingProgress(selectedBook, next, totalP);
+                                    }}
+                                    style={{
+                                      padding: "3px 8px",
+                                      borderRadius: "6px",
+                                      border: "1px solid var(--border)",
+                                      background: "var(--bg)",
+                                      color: "var(--text)",
+                                      fontSize: "11px",
+                                      fontWeight: "700",
+                                      cursor: "pointer"
+                                    }}
+                                  >
+                                    {delta > 0 ? `+${delta}` : delta}
+                                  </button>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateReadingProgress(selectedBook, totalP, totalP)}
+                                  style={{
+                                    padding: "3px 10px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #22c55e",
+                                    background: "rgba(34, 197, 94, 0.15)",
+                                    color: "#22c55e",
+                                    fontSize: "11px",
+                                    fontWeight: "800",
+                                    cursor: "pointer"
+                                  }}
+                                >
+                                  Finish ✨
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                 {renderCollapsibleSection({
                   id: "detailNotes",
@@ -5426,6 +5644,159 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
                       }}
                       user={user}
                     />
+                  ),
+                  style: styles.detailCollapse,
+                })}
+
+                {renderCollapsibleSection({
+                  id: "detailPersonalRatingReview",
+                  title: "My Personal Review & Tags ✏️",
+                  meta: reviews[getBookKey(selectedBook)] ? `${"★".repeat(reviews[getBookKey(selectedBook)].rating || 0)}${"☆".repeat(5 - (reviews[getBookKey(selectedBook)].rating || 0))}` : "Not reviewed",
+                  defaultOpen: true,
+                  children: (
+                    <div style={{ padding: "8px 0", display: "flex", flexDirection: "column", gap: "14px", textAlign: "left" }}>
+                      {/* Star Rating Selection */}
+                      <div>
+                        <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)", display: "block", marginBottom: "6px" }}>
+                          My Star Rating
+                        </span>
+                        <div style={{ display: "flex", gap: "8px", fontSize: "28px", lineHeight: "1" }}>
+                          {[1, 2, 3, 4, 5].map((star) => {
+                            const isStarred = (reviews[getBookKey(selectedBook)]?.rating || 0) >= star;
+                            return (
+                              <span
+                                key={star}
+                                onClick={() => {
+                                  const current = reviews[getBookKey(selectedBook)] || {};
+                                  setReviews(prev => ({
+                                    ...prev,
+                                    [getBookKey(selectedBook)]: {
+                                      ...current,
+                                      rating: star,
+                                      updatedAt: new Date().toISOString(),
+                                    }
+                                  }));
+                                }}
+                                style={{ cursor: "pointer", color: isStarred ? "#f59e0b" : "var(--border)", userSelect: "none" }}
+                              >
+                                ★
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Written Review */}
+                      <div>
+                        <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)", display: "block", marginBottom: "6px" }}>
+                          Written Review
+                        </span>
+                        <textarea
+                          placeholder="Write your thoughts about this book..."
+                          value={reviews[getBookKey(selectedBook)]?.summary || ""}
+                          onChange={(e) => {
+                            const current = reviews[getBookKey(selectedBook)] || {};
+                            setReviews(prev => ({
+                              ...prev,
+                              [getBookKey(selectedBook)]: {
+                                ...current,
+                                summary: e.target.value,
+                                updatedAt: new Date().toISOString(),
+                              }
+                            }));
+                          }}
+                          style={{
+                            width: "100%",
+                            minHeight: "80px",
+                            padding: "10px",
+                            borderRadius: "8px",
+                            border: "1px solid var(--border)",
+                            background: "var(--code-bg)",
+                            color: "var(--text-h)",
+                            font: "inherit",
+                            fontSize: "14px",
+                            resize: "vertical",
+                          }}
+                        />
+                      </div>
+
+                      {/* Custom Tags Section */}
+                      <div>
+                        <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)", display: "block", marginBottom: "6px" }}>
+                          Custom Tags / Labels
+                        </span>
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
+                          {(bookTags[getBookKey(selectedBook)] || []).map(tag => (
+                            <span
+                              key={tag}
+                              onClick={() => toggleBookTag(getBookKey(selectedBook), tag)}
+                              style={{
+                                background: "var(--accent-bg)",
+                                border: "1px solid var(--accent)",
+                                color: "var(--accent)",
+                                borderRadius: "12px",
+                                padding: "3px 10px",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px"
+                              }}
+                            >
+                              {tag} ✕
+                            </span>
+                          ))}
+                        </div>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <input
+                            type="text"
+                            placeholder="Add custom tag (e.g. sci-fi-backlog)"
+                            id="custom-tag-input-details"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                const val = e.target.value.trim();
+                                if (val) {
+                                  toggleBookTag(getBookKey(selectedBook), val);
+                                  e.target.value = "";
+                                }
+                              }
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: "6px 10px",
+                              borderRadius: "6px",
+                              border: "1px solid var(--border)",
+                              background: "var(--code-bg)",
+                              color: "var(--text-h)",
+                              fontSize: "13px",
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const el = document.getElementById("custom-tag-input-details");
+                              if (el && el.value.trim()) {
+                                toggleBookTag(getBookKey(selectedBook), el.value.trim());
+                                el.value = "";
+                              }
+                            }}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "6px",
+                              border: "1px solid var(--border)",
+                              background: "var(--bg)",
+                              color: "var(--text-h)",
+                              fontSize: "13px",
+                              fontWeight: "750",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   ),
                   style: styles.detailCollapse,
                 })}
@@ -7374,6 +7745,42 @@ const styles = {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))",
     gap: "10px",
+  },
+  vibeChipsContainer: {
+    display: "flex",
+    gap: "8px",
+    overflowX: "auto",
+    padding: "8px 0",
+    margin: "8px 0",
+  },
+  vibeChip: {
+    flex: "0 0 auto",
+    padding: "6px 14px",
+    borderRadius: "20px",
+    border: "1px solid var(--border)",
+    background: "var(--code-bg)",
+    color: "var(--text)",
+    fontSize: "13px",
+    fontWeight: "600",
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+  },
+  vibeChipActive: {
+    background: "var(--accent)",
+    color: "#ffffff",
+    borderColor: "var(--accent)",
+    boxShadow: "0 2px 8px rgba(99, 102, 241, 0.25)",
+  },
+  advancedToggleBtn: {
+    background: "transparent",
+    border: "none",
+    color: "var(--accent)",
+    fontWeight: "750",
+    fontSize: "13px",
+    cursor: "pointer",
+    padding: "6px 12px",
+    borderRadius: "6px",
+    transition: "background 0.2s ease",
   },
   filterLabel: {
     display: "grid",

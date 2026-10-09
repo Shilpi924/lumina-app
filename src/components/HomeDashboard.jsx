@@ -106,16 +106,16 @@ export default function HomeDashboard({
         justifyContent: "space-between", 
         alignItems: "center", 
         flexWrap: "wrap", 
-        gap: "16px",
+        gap: "12px",
         marginBottom: "16px",
         paddingBottom: "12px",
         borderBottom: "1px solid var(--border)"
       }}>
-        <div>
-          <h1 style={{ fontSize: "22px", fontWeight: "800", margin: "0 0 4px 0", color: "var(--text)" }}>
+        <div style={{ flex: 1, minWidth: "200px" }}>
+          <h1 style={{ fontSize: "clamp(18px, 5vw, 22px)", fontWeight: "800", margin: "0 0 4px 0", color: "var(--text)" }}>
             {greeting}
           </h1>
-          <p style={{ fontSize: "13px", color: "var(--text-l)", margin: 0 }}>
+          <p style={{ fontSize: "clamp(12px, 3vw, 13px)", color: "var(--text-l)", margin: 0 }}>
             Your knowledge is growing. What will you discover today?
           </p>
         </div>
@@ -123,27 +123,28 @@ export default function HomeDashboard({
         {/* Compact Horizontal Stats Bar (Pill Design) */}
         <div style={{ 
           display: "flex", 
-          gap: "8px", 
+          gap: "6px", 
           backgroundColor: "var(--card-bg)", 
           border: "1px solid var(--border)", 
           borderRadius: "20px", 
-          padding: "6px 14px",
+          padding: "6px 12px",
           alignItems: "center",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.01)"
+          boxShadow: "0 2px 8px rgba(0,0,0,0.01)",
+          flexWrap: "wrap"
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "13px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "clamp(11px, 3vw, 13px)" }}>
             <span style={{ color: "var(--accent)", fontWeight: "800" }}>{streak}</span>
-            <span style={{ color: "var(--text-l)", fontSize: "11px", fontWeight: "600" }}>Streak</span>
+            <span style={{ color: "var(--text-l)", fontSize: "clamp(10px, 2.5vw, 11px)", fontWeight: "600" }}>Streak</span>
           </div>
-          <span style={{ color: "var(--border)", fontSize: "12px" }}>|</span>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "13px" }}>
+          <span style={{ color: "var(--border)", fontSize: "clamp(10px, 2.5vw, 12px)" }}>|</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "clamp(11px, 3vw, 13px)" }}>
             <span style={{ color: "#8b5cf6", fontWeight: "800" }}>{totalBooks}</span>
-            <span style={{ color: "var(--text-l)", fontSize: "11px", fontWeight: "600" }}>Saved</span>
+            <span style={{ color: "var(--text-l)", fontSize: "clamp(10px, 2.5vw, 11px)", fontWeight: "600" }}>Saved</span>
           </div>
-          <span style={{ color: "var(--border)", fontSize: "12px" }}>|</span>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "13px" }}>
+          <span style={{ color: "var(--border)", fontSize: "clamp(10px, 2.5vw, 12px)" }}>|</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "clamp(11px, 3vw, 13px)" }}>
             <span style={{ color: "#06b6d4", fontWeight: "800" }}>{totalScans}</span>
-            <span style={{ color: "var(--text-l)", fontSize: "11px", fontWeight: "600" }}>Scans</span>
+            <span style={{ color: "var(--text-l)", fontSize: "clamp(10px, 2.5vw, 11px)", fontWeight: "600" }}>Scans</span>
           </div>
         </div>
       </div>
@@ -152,17 +153,17 @@ export default function HomeDashboard({
       <div style={{ 
         background: "linear-gradient(135deg, var(--accent-bg) 0%, rgba(139, 92, 246, 0.1) 100%)",
         borderRadius: "16px", 
-        padding: "20px", 
+        padding: "clamp(16px, 4vw, 20px)", 
         marginBottom: "24px",
         border: "1px solid var(--accent-border)",
       }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "16px" }}>
-          <span style={{ fontSize: "40px", lineHeight: 1 }}>{dailyInsight.icon}</span>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "clamp(12px, 3vw, 16px)" }}>
+          <span style={{ fontSize: "clamp(32px, 8vw, 40px)", lineHeight: 1 }}>{dailyInsight.icon}</span>
           <div style={{ flex: 1 }}>
-            <h3 style={{ fontSize: "18px", fontWeight: "700", margin: "0 0 8px 0", color: "var(--text)" }}>
+            <h3 style={{ fontSize: "clamp(16px, 4vw, 18px)", fontWeight: "700", margin: "0 0 8px 0", color: "var(--text)" }}>
               {dailyInsight.title}
             </h3>
-            <p style={{ fontSize: "14px", color: "#64748b", margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontSize: "clamp(13px, 3vw, 14px)", color: "#64748b", margin: 0, lineHeight: 1.5 }}>
               {dailyInsight.text}
             </p>
           </div>
@@ -171,12 +172,12 @@ export default function HomeDashboard({
 
       {/* Quick Actions */}
       <div style={{ marginBottom: "24px" }}>
-        <h2 style={{ fontSize: "18px", fontWeight: "700", margin: "0 0 16px 0", color: "var(--text)" }}>
+        <h2 style={{ fontSize: "clamp(16px, 4vw, 18px)", fontWeight: "700", margin: "0 0 16px 0", color: "var(--text)" }}>
           Quick Actions
         </h2>
         <div style={{ 
           display: "grid", 
-          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", 
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", 
           gap: "12px" 
         }}>
           {quickActions.map((action) => (
@@ -188,7 +189,7 @@ export default function HomeDashboard({
                 background: action.bg,
                 border: `1px solid ${action.color}20`,
                 borderRadius: "12px",
-                padding: "20px 16px",
+                padding: "clamp(16px, 4vw, 20px) clamp(12px, 3vw, 16px)",
                 cursor: "pointer",
                 transition: "all 0.2s",
                 textAlign: "left",
@@ -202,13 +203,13 @@ export default function HomeDashboard({
                 e.target.style.boxShadow = "none";
               }}
             >
-              <span style={{ fontSize: "32px", display: "block", marginBottom: "8px" }}>
+              <span style={{ fontSize: "clamp(28px, 7vw, 32px)", display: "block", marginBottom: "8px" }}>
                 {action.icon}
               </span>
-              <div style={{ fontSize: "15px", fontWeight: "700", color: action.color, marginBottom: "4px" }}>
+              <div style={{ fontSize: "clamp(14px, 3.5vw, 15px)", fontWeight: "700", color: action.color, marginBottom: "4px" }}>
                 {action.label}
               </div>
-              <div style={{ fontSize: "12px", color: "#64748b" }}>
+              <div style={{ fontSize: "clamp(11px, 2.5vw, 12px)", color: "#64748b" }}>
                 {action.description}
               </div>
             </button>
@@ -219,7 +220,7 @@ export default function HomeDashboard({
       {/* Recent Activity */}
       {recentScans.length > 0 && (
         <div>
-          <h2 style={{ fontSize: "18px", fontWeight: "700", margin: "0 0 16px 0", color: "var(--text)" }}>
+          <h2 style={{ fontSize: "clamp(16px, 4vw, 18px)", fontWeight: "700", margin: "0 0 16px 0", color: "var(--text)" }}>
             Recent Scans
           </h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -229,30 +230,30 @@ export default function HomeDashboard({
                 style={{
                   background: "var(--card-bg)",
                   borderRadius: "12px",
-                  padding: "16px",
+                  padding: "clamp(12px, 3vw, 16px)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
-                  gap: "12px",
+                  gap: "clamp(10px, 3vw, 12px)",
                 }}
               >
-                <div style={{ 
-                  width: "48px", 
-                  height: "48px", 
-                  borderRadius: "8px", 
+                <div style={{
+                  width: "clamp(40px, 10vw, 48px)",
+                  height: "clamp(40px, 10vw, 48px)",
+                  borderRadius: "8px",
                   background: "var(--accent-bg)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: "24px"
+                  fontSize: "clamp(20px, 5vw, 24px)"
                 }}>
                   📚
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: "600", color: "var(--text)" }}>
+                  <div style={{ fontSize: "clamp(13px, 3vw, 14px)", fontWeight: "600", color: "var(--text)" }}>
                     {scan.bookCount} {scan.bookCount === 1 ? "book" : "books"} scanned
                   </div>
-                  <div style={{ fontSize: "12px", color: "#64748b" }}>
+                  <div style={{ fontSize: "clamp(11px, 2.5vw, 12px)", color: "#64748b" }}>
                     {new Date(scan.createdAt).toLocaleDateString()} · {scan.model}
                   </div>
                 </div>
@@ -267,16 +268,16 @@ export default function HomeDashboard({
         <div style={{
           background: "var(--card-bg)",
           borderRadius: "16px",
-          padding: "32px",
+          padding: "clamp(24px, 6vw, 32px)",
           textAlign: "center",
           border: "1px solid var(--border)",
         }}>
-          <span style={{ fontSize: "48px", display: "block", marginBottom: "16px" }}>🚀</span>
-          <h3 style={{ fontSize: "18px", fontWeight: "700", margin: "0 0 8px 0", color: "var(--text)" }}>
+          <span style={{ fontSize: "clamp(40px, 10vw, 48px)", display: "block", marginBottom: "16px" }}>🚀</span>
+          <h3 style={{ fontSize: "clamp(16px, 4vw, 18px)", fontWeight: "700", margin: "0 0 8px 0", color: "var(--text)" }}>
             Start Your Knowledge Journey
           </h3>
-          <p style={{ fontSize: "14px", color: "#64748b", margin: "0 0 20px 0", lineHeight: 1.5 }}>
-            Scan your first book to begin building your personal knowledge graph. 
+          <p style={{ fontSize: "clamp(13px, 3vw, 14px)", color: "#64748b", margin: "0 0 20px 0", lineHeight: 1.5 }}>
+            Scan your first book to begin building your personal knowledge graph.
             Lumina will help you discover patterns, track your growth, and surface intelligent recommendations.
           </p>
           <button
@@ -287,8 +288,8 @@ export default function HomeDashboard({
               color: "#fff",
               border: "none",
               borderRadius: "8px",
-              padding: "12px 24px",
-              fontSize: "14px",
+              padding: "clamp(10px, 3vw, 12px) clamp(20px, 5vw, 24px)",
+              fontSize: "clamp(13px, 3vw, 14px)",
               fontWeight: "700",
               cursor: "pointer",
             }}

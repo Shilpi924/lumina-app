@@ -106,7 +106,23 @@ export function getFriendlyScanError(error) {
     return message || "Claude rejected this request. Check that the API key allows the Anthropic Messages API.";
   }
   if (code.includes("internal") && lowerMessage === "internal") {
-    return "The scan service hit an internal error. Try again once; if it repeats, check Firebase Function logs.";
+    return "The scan service is currently busy or ran into an issue. Please try scanning again.";
+  }
+
+  if (
+    lowerMessage.includes("messages.") ||
+    lowerMessage.includes("content.") ||
+    lowerMessage.includes("image.") ||
+    lowerMessage.includes("base64") ||
+    lowerMessage.includes("mimetype") ||
+    lowerMessage.includes("validation") ||
+    lowerMessage.includes("bad request") ||
+    lowerMessage.includes("syntax") ||
+    lowerMessage.includes("invalid") ||
+    lowerMessage.includes("type mismatch") ||
+    lowerMessage.includes("parse")
+  ) {
+    return "Lumina had trouble reading the photo. Please make sure the photo is clear and try again.";
   }
 
   return message || "Could not scan the bookshelf. Try a clearer photo of book spines.";

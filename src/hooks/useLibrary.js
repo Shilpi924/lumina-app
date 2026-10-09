@@ -219,6 +219,26 @@ export function useLibrary({ setSaveStatus }) {
     );
   }
 
+  function updateBookProgress(book, currentPage, totalPages) {
+    if (!book) return;
+    const bookKey = getBookKey(book);
+    setReadingList((current) =>
+      current.map((b) => {
+        if (getBookKey(b) !== bookKey) return b;
+        const validTotal = Math.max(1, Number(totalPages || b.totalPages || b.pageCount || 300));
+        const validCurrent = Math.max(0, Math.min(validTotal, Number(currentPage !== undefined ? currentPage : (b.currentPage || 0))));
+        const autoStatus = validCurrent >= validTotal ? "Finished" : (validCurrent > 0 ? "Reading" : (b.readingStatus || "To Read"));
+        return {
+          ...b,
+          currentPage: validCurrent,
+          totalPages: validTotal,
+          readingStatus: autoStatus,
+          lastProgressUpdate: new Date().toISOString(),
+        };
+      })
+    );
+  }
+
   return {
     readingList, setReadingList,
     savedFiles, setSavedFiles,
@@ -236,5 +256,6 @@ export function useLibrary({ setSaveStatus }) {
     toggleBookTag,
     saveLocalPreviewFile,
     updateBookReadingStatus,
+    updateBookProgress,
   };
 }

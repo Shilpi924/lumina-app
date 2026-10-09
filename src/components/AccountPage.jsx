@@ -43,6 +43,7 @@ export default function AccountPage({
   renderLibraryCards,
   canOpenDeveloper,
   renderDeveloperPage,
+  readingList = [],
   savedFiles = [],
   folders = [],
   reviews = {},
@@ -60,6 +61,12 @@ export default function AccountPage({
     }
     return "3";
   });
+  const [yearlyGoal, setYearlyGoal] = useState(() => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      return window.localStorage.getItem("lumina_yearly_reading_goal") || "12";
+    }
+    return "12";
+  });
   const [featuredBadge, setFeaturedBadge] = useState(() => {
     if (typeof window !== "undefined" && window.localStorage) {
       return window.localStorage.getItem("lumina_featured_badge") || "first_scan";
@@ -71,6 +78,13 @@ export default function AccountPage({
     setWeeklyGoal(val);
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.setItem("lumina_weekly_reading_goal", val);
+    }
+  };
+
+  const handleYearlyGoalChange = (val) => {
+    setYearlyGoal(val);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("lumina_yearly_reading_goal", val);
     }
   };
 
@@ -539,6 +553,12 @@ export default function AccountPage({
     const weeklyProgress = Math.min((savedFiles || []).length, weeklyGoalInt);
     const progressPercent = Math.round((weeklyProgress / weeklyGoalInt) * 100);
 
+    // Yearly Goal Progress Calculations
+    const finishedBooksCount = (readingList || []).filter(b => b.readingStatus === "Finished").length;
+    const yearlyGoalInt = parseInt(yearlyGoal, 10) || 12;
+    const yearlyProgress = Math.min(finishedBooksCount, yearlyGoalInt);
+    const yearlyProgressPercent = Math.round((yearlyProgress / yearlyGoalInt) * 100);
+
     return (
       <section
         style={{
@@ -591,82 +611,161 @@ export default function AccountPage({
 
         {achievementsOpen && (
           <div style={{ marginTop: "16px" }}>
-            {/* Weekly Goal Selector & Progress Bar */}
             <div
               style={{
                 backgroundColor: "var(--bg)",
-                border: "1px solid var(--border)",
                 borderRadius: "12px",
+                border: "1px solid var(--border)",
                 padding: "14px",
                 marginBottom: "16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "8px",
-                  flexWrap: "wrap",
-                  gap: "8px",
-                }}
-              >
-                <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text)" }}>
-                  🎯 Weekly Reading Goal:
-                </span>
-                <select
-                  value={weeklyGoal}
-                  onChange={(e) => handleWeeklyGoalChange(e.target.value)}
-                  style={{
-                    padding: "4px 8px",
-                    borderRadius: "6px",
-                    border: "1px solid var(--border)",
-                    background: "var(--card-bg)",
-                    color: "var(--text)",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                  }}
-                >
-                  <option value="1">1 Book / week</option>
-                  <option value="3">3 Books / week</option>
-                  <option value="5">5 Books / week</option>
-                  <option value="10">10 Books / week</option>
-                </select>
-              </div>
-
-              {/* Goal Progress Bar */}
-              <div
-                style={{
-                  width: "100%",
-                  height: "8px",
-                  backgroundColor: "var(--border)",
-                  borderRadius: "4px",
-                  overflow: "hidden",
-                  marginBottom: "4px",
-                }}
-              >
+              {/* Weekly Goal */}
+              <div>
                 <div
                   style={{
-                    width: `${progressPercent}%`,
-                    height: "100%",
-                    backgroundColor: "var(--accent)",
-                    transition: "width 0.3s ease",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "8px",
+                    flexWrap: "wrap",
+                    gap: "8px",
                   }}
-                />
+                >
+                  <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text)" }}>
+                    🎯 Weekly Reading Goal:
+                  </span>
+                  <select
+                    value={weeklyGoal}
+                    onChange={(e) => handleWeeklyGoalChange(e.target.value)}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid var(--border)",
+                      background: "var(--card-bg)",
+                      color: "var(--text)",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value="1">1 Book / week</option>
+                    <option value="3">3 Books / week</option>
+                    <option value="5">5 Books / week</option>
+                    <option value="10">10 Books / week</option>
+                  </select>
+                </div>
+
+                {/* Goal Progress Bar */}
+                <div
+                  style={{
+                    width: "100%",
+                    height: "8px",
+                    backgroundColor: "var(--border)",
+                    borderRadius: "4px",
+                    overflow: "hidden",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${progressPercent}%`,
+                      height: "100%",
+                      backgroundColor: "var(--accent)",
+                      transition: "width 0.3s ease",
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "11px",
+                    color: "var(--text-l)",
+                  }}
+                >
+                  <span>{progressPercent}% Complete</span>
+                  <span>
+                    {weeklyProgress}/{weeklyGoalInt} Books
+                  </span>
+                </div>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: "11px",
-                  color: "var(--text-l)",
-                }}
-              >
-                <span>{progressPercent}% Complete</span>
-                <span>
-                  {weeklyProgress}/{weeklyGoalInt} Books
-                </span>
+
+              <div style={{ height: "1px", backgroundColor: "var(--border)" }} />
+
+              {/* Yearly Goal */}
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "8px",
+                    flexWrap: "wrap",
+                    gap: "8px",
+                  }}
+                >
+                  <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text)" }}>
+                    🏆 Yearly Reading Goal ({new Date().getFullYear()}):
+                  </span>
+                  <select
+                    value={yearlyGoal}
+                    onChange={(e) => handleYearlyGoalChange(e.target.value)}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid var(--border)",
+                      background: "var(--card-bg)",
+                      color: "var(--text)",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value="5">5 Books</option>
+                    <option value="12">12 Books</option>
+                    <option value="25">25 Books</option>
+                    <option value="50">50 Books</option>
+                    <option value="100">100 Books</option>
+                  </select>
+                </div>
+
+                {/* Yearly Goal Progress Bar */}
+                <div
+                  style={{
+                    width: "100%",
+                    height: "8px",
+                    backgroundColor: "var(--border)",
+                    borderRadius: "4px",
+                    overflow: "hidden",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${yearlyProgressPercent}%`,
+                      height: "100%",
+                      backgroundColor: "#10b981",
+                      transition: "width 0.3s ease",
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "11px",
+                    color: "var(--text-l)",
+                  }}
+                >
+                  <span>{yearlyProgressPercent}% Complete</span>
+                  <span>
+                    {yearlyProgress}/{yearlyGoalInt} Books Finished
+                  </span>
+                </div>
               </div>
             </div>
 
