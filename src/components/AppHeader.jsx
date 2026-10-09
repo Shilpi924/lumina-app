@@ -6,6 +6,8 @@ export default function AppHeader({
   setCurrentPage,
   user,
   styles,
+  streak = 0,
+  onStreakClick,
 }) {
   return (
     <div style={styles.hero}>
@@ -22,22 +24,51 @@ export default function AppHeader({
             </div>
             <h1 style={styles.title}>Lumina</h1>
           </button>
-          <button
-            type="button"
-            style={{
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              padding: "8px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: "50%",
-              backgroundColor: "rgba(34, 49, 71, 0.05)",
-            }}
-            onClick={() => setCurrentPage("account")}
-            aria-label="Account"
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {typeof streak === "number" && (
+              <button
+                type="button"
+                onClick={onStreakClick}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "5px 10px",
+                  borderRadius: "20px",
+                  background: streak > 0 
+                    ? "linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(239, 68, 68, 0.15) 100%)" 
+                    : "rgba(148, 163, 184, 0.12)",
+                  border: streak > 0 ? "1px solid rgba(249, 115, 22, 0.35)" : "1px solid rgba(148, 163, 184, 0.2)",
+                  cursor: "pointer",
+                  fontWeight: "700",
+                  fontSize: "13px",
+                  color: streak > 0 ? "#ea580c" : "#64748b",
+                  boxShadow: streak > 0 ? "0 2px 8px rgba(249, 115, 22, 0.15)" : "none",
+                  transition: "all 0.2s ease",
+                }}
+                title={streak > 0 ? `${streak} day reading streak! Keep it burning 🔥` : "Start your reading streak today!"}
+                aria-label={`${streak} day reading streak`}
+              >
+                <span style={{ fontSize: "15px" }}>🔥</span>
+                <span>{streak}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "50%",
+                backgroundColor: "rgba(34, 49, 71, 0.05)",
+              }}
+              onClick={() => setCurrentPage("account")}
+              aria-label="Account"
+            >
             {user?.customPhotoURL || user?.photoURL ? (
               <img
                 src={user.customPhotoURL || user.photoURL}
@@ -51,7 +82,8 @@ export default function AppHeader({
             )}
           </button>
         </div>
-        {currentPage === "scan" && (
+      </div>
+      {currentPage === "scan" && (
           <div style={{ marginTop: "12px", textAlign: "center" }}>
             <h2 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 4px 0", color: "#1e293b", textAlign: "center" }}>
               Take a photo of your bookshelf

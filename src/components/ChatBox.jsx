@@ -26,8 +26,36 @@ function getAIResponseText(result) {
   return text;
 }
 
+const PERSONAS = [
+  {
+    id: "booktok",
+    label: "✨ BookTok",
+    title: "✨ BookTok Bestie",
+    instruction: "You are Lumina, a vibrant BookTok bestie who loves popular tropes (enemies-to-lovers, found family, dark academia), spills tea on plot twists, uses modern internet slang (no cap, rent free, screaming crying throwing up, unhinged), and gives ultra-relatable book recommendations with tons of emojis.",
+  },
+  {
+    id: "scholar",
+    label: "🧐 Scholar",
+    title: "🧐 Literary Scholar",
+    instruction: "You are Lumina, a sharp literary professor and analytical critic. You explore deeper philosophical motifs, prose style, narrative structure, historical context, and thematic resonance. Keep answers insightful and articulate.",
+  },
+  {
+    id: "detective",
+    label: "🕵️ Detective",
+    title: "🕵️ Plot Detective",
+    instruction: "You are Lumina, an eccentric mystery and plot detective. You look for foreshadowing, subtle clues, character motives, hidden agendas, and plot theories. Speak like an intriguing investigator.",
+  },
+  {
+    id: "blind_date",
+    label: "🔮 Blind Date",
+    title: "🔮 Blind Date with a Book",
+    instruction: "You are Lumina, host of Blind Date with a Book! Instead of immediately naming titles, you describe the book's irresistible vibe, key aesthetics, first-sentence intrigue, emotional tags, and tropes, challenging the reader to guess or pick it on pure instinct before revealing!",
+  },
+];
+
 export default function ChatBox({ readingList, isOffline = false }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [activePersona, setActivePersona] = useState(PERSONAS[0].id);
   const [messages, setMessages] = useState([
     { role: 'model', text: 'Hi! I am Lumina, your virtual librarian. 📚 How can I help you find your next read?' }
   ]);
@@ -36,6 +64,8 @@ export default function ChatBox({ readingList, isOffline = false }) {
   const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef(null);
   const originalInputRef = useRef('');
+
+  const currentPersona = PERSONAS.find((p) => p.id === activePersona) || PERSONAS[0];
 
   const startListening = async () => {
     if (isListening) return;
@@ -127,7 +157,7 @@ export default function ChatBox({ readingList, isOffline = false }) {
         ? `User's Reading List titles: ${readingList.map(b => b.title).join(', ')}.` 
         : '';
         
-      const systemPrompt = `You are Lumina, a helpful Gen Z virtual librarian in the BookCompass app. Keep your answers relatively short, friendly, and use emojis. Context: ${readingListContext}`;
+      const systemPrompt = `${currentPersona.instruction} Keep your answers relatively short, friendly, and engaging. Context: ${readingListContext}`;
 
       const contents = [
         { role: 'user', parts: [{ text: systemPrompt }] },
@@ -177,8 +207,24 @@ export default function ChatBox({ readingList, isOffline = false }) {
       {isOpen && (
         <div className="chatbox-window">
           <div className="chatbox-header">
-            <h3>✨ Lumina</h3>
+            <div>
+              <h3>✨ Lumina</h3>
+              <div style={{ fontSize: "11px", opacity: 0.9, marginTop: "2px" }}>{currentPersona.title}</div>
+            </div>
             <button onClick={() => setIsOpen(false)}>×</button>
+          </div>
+
+          <div className="chatbox-persona-bar">
+            {PERSONAS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`chatbox-persona-chip ${activePersona === p.id ? "active" : ""}`}
+                onClick={() => setActivePersona(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
 
           <div className="chatbox-messages">

@@ -68,6 +68,9 @@ import CompareTray from "./components/CompareTray";
 import ScanLandingSection from "./components/ScanLandingSection";
 import ScanResultsSection from "./components/ScanResultsSection";
 import HomeDashboard from "./components/HomeDashboard";
+import { useReadingStreak } from "./hooks/useReadingStreak";
+import BookCelebrationModal from "./components/BookCelebrationModal";
+import SoundscapePlayer from "./components/SoundscapePlayer";
 import localforage from "localforage";
 import { BarcodeFormat, BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
 const IS_BETA_MODE = true;
@@ -1570,6 +1573,13 @@ export default function App() {
     updateBookReadingStatus,
     updateBookProgress,
   } = useLibrary({ setSaveStatus });
+  const {
+    streak,
+    hasReadToday,
+    weeklyHistory,
+    recordActivity: recordStreakActivity,
+  } = useReadingStreak();
+  const [celebrationBook, setCelebrationBook] = useState(null);
   const [idleBursts, setIdleBursts] = useState([]);
   const [savedArtActive, setSavedArtActive] = useState(false);
   const [readingDna, setReadingDna] = useState(null);
@@ -3009,6 +3019,10 @@ Return ONLY valid JSON in this exact structure:
 
   function handleUpdateReadingStatus(book, status) {
     updateBookReadingStatus(book, status);
+    if (status === "Finished") {
+      recordStreakActivity();
+      setCelebrationBook(book);
+    }
     setSelectedBook((current) => {
       if (current && getBookKey(current) === getBookKey(book)) {
         return { ...current, readingStatus: status };
@@ -3018,6 +3032,7 @@ Return ONLY valid JSON in this exact structure:
   }
 
   function handleUpdateReadingProgress(book, currentPage, totalPages) {
+    recordStreakActivity();
     updateBookProgress(book, currentPage, totalPages);
     setSelectedBook((current) => {
       if (current && getBookKey(current) === getBookKey(book)) {
@@ -3026,6 +3041,7 @@ Return ONLY valid JSON in this exact structure:
         const autoStatus = validCurrent >= validTotal ? "Finished" : (validCurrent > 0 ? "Reading" : (current.readingStatus || "To Read"));
         if (autoStatus === "Finished" && current.readingStatus !== "Finished") {
           showToast(`🎉 Congratulations on finishing "${book.title}"!`, "success");
+          setCelebrationBook(book);
         }
         return {
           ...current,
@@ -5213,6 +5229,8 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
         setCurrentPage={setCurrentPage}
         user={user}
         styles={styles}
+        streak={streak}
+        onStreakClick={() => setCurrentPage("home")}
       />
 
       {currentPage === "home" && (
@@ -5226,6 +5244,10 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
           onNavigateToDna={() => setCurrentPage("dna")}
           onNavigateToSaved={() => setCurrentPage("saved")}
           styles={styles}
+          streak={streak}
+          hasReadToday={hasReadToday}
+          weeklyHistory={weeklyHistory}
+          onCheckIn={recordStreakActivity}
         />
       )}
       {currentPage === "account" && renderAccountPage()}
@@ -5589,6 +5611,8 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
                                 </button>
                               </div>
                             </div>
+
+                            <SoundscapePlayer style={{ marginTop: "6px" }} />
                           </div>
                         )}
                       </div>
@@ -5972,6 +5996,13 @@ Make suggestions array exactly 3 globally acclaimed books that perfectly match t
 	            </BookDetailsModal>
 	          );
 	        })()}
+
+      {celebrationBook && (
+        <BookCelebrationModal
+          book={celebrationBook}
+          onClose={() => setCelebrationBook(null)}
+        />
+      )}
 
       {loading && (
         <div style={styles.processingOverlay}>

@@ -10,13 +10,17 @@ export default function HomeDashboard({
   onNavigateToVibe,
   onNavigateToDna,
   onNavigateToSaved,
+  streak: streakProp,
+  hasReadToday = false,
+  weeklyHistory = [],
+  onCheckIn,
 }) {
   const greeting = useMemo(() => {
     const name = user?.displayName || "Reader";
     return `${getTimeGreeting(new Date())}, ${name}`;
   }, [user]);
 
-  const streak = useMemo(() => {
+  const scanStreak = useMemo(() => {
     const sortedHistory = Array.isArray(scanHistory) ? [...scanHistory].sort(
       (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
     ) : [];
@@ -43,6 +47,8 @@ export default function HomeDashboard({
     return currentStreak;
   }, [scanHistory]);
 
+  const activeStreak = typeof streakProp === "number" ? streakProp : scanStreak;
+
   const totalBooks = Array.isArray(readingList) ? readingList.length : 0;
   const totalScans = Array.isArray(scanHistory) ? scanHistory.length : 0;
 
@@ -50,11 +56,11 @@ export default function HomeDashboard({
     const insights = [
       { icon: "📚", title: "Keep the momentum", text: `You've scanned ${totalScans} books. Your curiosity is building a knowledge network.` },
       { icon: "🧠", title: "Neural connections forming", text: readingDna?.length > 0 ? `Your reading DNA shows ${readingDna.length} unique traits.` : "Scan more books to discover your reading DNA." },
-      { icon: "🌟", title: "Consistency wins", text: streak > 0 ? `${streak} day streak! Small daily actions compound into wisdom.` : "Start your streak today!" },
+      { icon: "🌟", title: "Consistency wins", text: activeStreak > 0 ? `${activeStreak} day streak! Small daily actions compound into wisdom.` : "Start your streak today!" },
       { icon: "🔮", title: "Knowledge awaits", text: "Every book you scan adds to your personal knowledge graph." },
     ];
     return insights[getTodayKey().split("-").reduce((sum, part) => sum + Number(part), 0) % insights.length];
-  }, [totalScans, readingDna, streak]);
+  }, [totalScans, readingDna, activeStreak]);
 
   const quickActions = [
     {
@@ -133,7 +139,7 @@ export default function HomeDashboard({
           flexWrap: "wrap"
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "clamp(11px, 3vw, 13px)" }}>
-            <span style={{ color: "var(--accent)", fontWeight: "800" }}>{streak}</span>
+            <span style={{ color: "var(--accent)", fontWeight: "800" }}>{activeStreak}</span>
             <span style={{ color: "var(--text-l)", fontSize: "clamp(10px, 2.5vw, 11px)", fontWeight: "600" }}>Streak</span>
           </div>
           <span style={{ color: "var(--border)", fontSize: "clamp(10px, 2.5vw, 12px)" }}>|</span>
@@ -147,6 +153,106 @@ export default function HomeDashboard({
             <span style={{ color: "var(--text-l)", fontSize: "clamp(10px, 2.5vw, 11px)", fontWeight: "600" }}>Scans</span>
           </div>
         </div>
+      </div>
+
+      {/* Reading Habit & Streak Tracker Widget */}
+      <div style={{
+        background: "linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.95) 100%)",
+        borderRadius: "16px",
+        padding: "16px 20px",
+        marginBottom: "16px",
+        border: "1px solid var(--border)",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.02)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "12px",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "24px" }}>🔥</span>
+            <div>
+              <div style={{ fontSize: "15px", fontWeight: "800", color: "var(--text)" }}>
+                {activeStreak > 0 ? `${activeStreak} Day Reading Streak` : "Start Your Daily Reading Habit"}
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-l)" }}>
+                {hasReadToday ? "Goal achieved today! Keep the flame alive ✨" : "Check in today to keep your streak burning"}
+              </div>
+            </div>
+          </div>
+          {!hasReadToday && onCheckIn && (
+            <button
+              type="button"
+              onClick={onCheckIn}
+              style={{
+                background: "linear-gradient(135deg, #f97316 0%, #ef4444 100%)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "20px",
+                padding: "6px 14px",
+                fontSize: "12px",
+                fontWeight: "700",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(249, 115, 22, 0.3)",
+                transition: "transform 0.15s ease",
+              }}
+            >
+              Check In Today ⚡
+            </button>
+          )}
+        </div>
+
+        {Array.isArray(weeklyHistory) && weeklyHistory.length > 0 && (
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            background: "var(--bg)",
+            borderRadius: "12px",
+            padding: "8px 12px",
+            border: "1px solid var(--border)",
+          }}>
+            {weeklyHistory.map((day) => (
+              <div
+                key={day.date}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <span style={{
+                  fontSize: "10px",
+                  fontWeight: day.isToday ? "800" : "600",
+                  color: day.isToday ? "var(--accent)" : "var(--text-l)",
+                  textTransform: "uppercase",
+                }}>
+                  {day.dayName}
+                </span>
+                <div style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "11px",
+                  fontWeight: "800",
+                  background: day.active
+                    ? "linear-gradient(135deg, #f97316 0%, #ef4444 100%)"
+                    : day.isToday
+                    ? "rgba(249, 115, 22, 0.15)"
+                    : "var(--border)",
+                  color: day.active ? "#fff" : day.isToday ? "#ea580c" : "var(--text-l)",
+                  border: day.isToday ? "2px solid #f97316" : "none",
+                  boxShadow: day.active ? "0 2px 6px rgba(249, 115, 22, 0.35)" : "none",
+                }}>
+                  {day.active ? "✓" : day.isToday ? "•" : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Daily Insight Card */}
